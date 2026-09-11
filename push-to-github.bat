@@ -4,7 +4,7 @@ title 推送「她的信息本-iOS」到 GitHub
 setlocal EnableDelayedExpansion
 
 REM ════════════════════════════════════════════════════════════════
-REM  她的信息本-iOS → GitHub   推送脚本 v4
+REM  她的信息本-iOS → GitHub   推送脚本 v5
 REM
 REM  v1 的教训：一上来就 push，失败了只说「推送失败」——
 REM  用户无从判断是地址写错、登录没过、还是网络不通，
@@ -27,6 +27,16 @@ REM    c. 「没报错」也不等于「网络没问题」。系统级 gitconfig 里的
 REM       credential.helper=helper-selector 每次认证空跑 40 秒，push 要认证
 REM       两回 = 80 秒，命令被超时掐死且**一个字都不打印** —— 现场看着
 REM       就是「网络不通」。现在推送前会把它绕开（见 :tune_creds）。
+REM
+REM  v5 的更正（补上 v4-c 没说透的那一半）：
+REM    credential.helper 是【累加】的，不是覆盖 —— 所以「global 已经指向
+REM    GCM」并不能免除那 40 秒，system 里那条 selector 照样会跑一遍。
+REM    正确的绕法是：在优先级最高的一层写一条**空值**（空值会清空前面积累
+REM    的全部 helper），再显式指定要用的 GCM。
+REM    本脚本在仓库级做了这件事；同时全局 ~/.gitconfig 也已经修好，
+REM    所以其他项目也不用再白等那 40 秒。
+REM    用的是短名 manager，不写绝对路径 —— WorkBuddy 升级便携版 git 之后
+REM    版本号会变（…/versions/1.2.0/…），写死路径会直接失效。
 REM
 REM  v2 改成「先诊断，再推送」：
 REM    1. 先测这个地址到底连不连得上，并把 git 的原始输出原样打出来
@@ -258,13 +268,22 @@ REM
 REM  这里必须关掉延迟展开：要搬的值形如 !"C:/…/git-credential-manager.exe"，
 REM  开着延迟展开的话那个感叹号会被当成变量引用、把整段值吃掉。
 REM ════════════════════════════════════════════════════════════════
+REM ── 绕开 system 级的「凭据助手选择器」───────────────────────────
+REM  helper-selector 每次认证要空跑 40 秒，而一次 push 要认证两次（取 + 存）
+REM  = 80 秒，足以把命令拖过超时线，而且屏幕上一个字都不会打出来。
+REM
+REM  注意 credential.helper 是【累加】的，不是覆盖：即使 global 已经指向 GCM，
+REM  system 里那条 selector 依然会被调用一次。
+REM  所以这里先在 local 写一条空值 —— 空值会清空前面积累的全部 helper ——
+REM  再显式加一条 GCM，selector 就整条被摘掉了。
+REM
+REM  用 PATH 里的短名 manager，不写绝对路径：写死绝对路径会在
+REM  WorkBuddy 升级便携版 git（…/PortableGit/versions/x.y.z/…）之后直接失效。
 :tune_creds
 setlocal disabledelayedexpansion
 set "UH="
-for /f "delims=" %%h in ('"%GITEXE%" config --global --get credential.helper 2^>nul') do set "UH=%%h"
-if not defined UH goto :tune_creds_out
-echo %UH% | findstr /i "credential-manager" >nul
-if errorlevel 1 goto :tune_creds_out
+for /f "delims=" %%h in ('"%GITEXE%" config --global --get-all credential.helper 2^>nul') do if not defined UH if not "%%h"=="" set "UH=%%h"
+if not defined UH set "UH=manager"
 "%GITEXE%" config --local --replace-all credential.helper "" 2>nul
 "%GITEXE%" config --local --add credential.helper "%UH%" 2>nul
 if errorlevel 1 goto :tune_creds_out
