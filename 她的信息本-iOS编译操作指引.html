@@ -258,6 +258,24 @@
         </div>
       </div>
 
+      <div class="note alt">
+        <span class="ic">▸</span>
+        <div>
+          <b>这一步你其实已经做过了</b>（仓库叫 <span class="mono">She</span>，公开，带了一个自动生成的 README）。
+          <b>不必删掉重建</b> —— STEP 02 的脚本在推送前会发现远程非空，
+          告诉你远程上有什么，再问你要不要覆盖。那个自动生成的 README 覆盖掉没有任何损失。
+          <br><br>
+          <b>两件可以顺手做的事：</b>
+          <br>
+          1. 它是<b>公开</b>的。想改成私有：仓库页 <span class="mono">Settings</span> → 最下面
+             <span class="mono">Danger Zone</span> → <span class="mono">Change visibility</span>。
+             趁现在仓库里还没有你的代码，改起来最省事。
+          <br>
+          2. 顺手把 <span class="mono">Description</span> 也清一下 —— 现在写的是「jlt」，
+             别人在列表里看到不知道是什么。填「她的信息本 · iOS」之类就行。
+        </div>
+      </div>
+
       <p class="tiny" style="margin-top:14px">建好后页面会给你一段示例命令，<b>不用照着做</b> —— 下一步的命令是给它准备好的。</p>
     </div>
   </div>
@@ -269,7 +287,7 @@
       <div class="num">2</div>
       <div class="tt">
         <h3>运行推送脚本</h3>
-        <p>双击一个文件，粘贴一次地址</p>
+        <p>双击一个文件，跟着窗口走（最多回车两次）</p>
       </div>
       <div class="chk"><input type="checkbox" aria-label="第 2 步完成"></div>
     </div>
@@ -278,16 +296,23 @@
       <div class="note warn">
         <span class="ic">⚠</span>
         <div>
-          <b>先纠正上一版的一句错话：这台电脑上没有 Git Bash。</b>
-          Git Bash 是装了 <b>Git for Windows</b> 之后才有的；这台机器上装的是随工具附带的<b>便携版</b> ——
-          它不进开始菜单，也不在系统 PATH 里（直接敲 <span class="mono">git</span> 会提示「不是内部或外部命令」）。
-          所以「开始菜单搜 Git Bash」对你<b>不成立</b>，那一步作废。
+          <b>先说诊断结论：上次是「地址里的仓库名不对」，而且远程仓库还是非空的。</b>
           <br><br>
-          <b>但你不需要它。</b>要敲的命令已经封成一个双击就能跑的文件，机器上现成的 git 也够用。
+          我查了 <span class="mono">haohao234</span> 这个账号：脚本里原配的地址
+          <span class="mono">…/For-She.git</span> 在 GitHub 上<b>不存在</b>，
+          git 报的就是这个 —— <span class="mono">Repository not found</span>。
+          账号下今天新建的仓库实际叫 <span class="mono">She</span>。
+          <br><br>
+          <b>还有第二层坑，它更隐蔽：那个仓库不是空的。</b>
+          建仓库时勾了 <span class="mono">Add a README</span>，远程已经有了一个提交 ——
+          <b>就算地址改对，直接推也会被拒绝</b>（<span class="mono">rejected</span>）。
+          旧版脚本只会说一句「推送失败」，看不出是这一层。
+          <br><br>
+          新版脚本把这两件事都接住了：<b>先测地址，再问你要不要覆盖远程。</b>
         </div>
       </div>
 
-      <h4>第 1 步 · 把那个文件找出来</h4>
+      <h4>第 1 步 · 找到并双击那个文件</h4>
       <ol class="how">
         <li>按 <kbd>Win</kbd> + <kbd>E</kbd> 打开「文件资源管理器」</li>
         <li>点一下顶部的<b>地址栏</b>（平时显示「此电脑」的那一条），粘贴下面这行，按 <kbd>Enter</kbd>：
@@ -299,68 +324,94 @@
         <li>在打开的文件夹里找到 <span class="mono">push-to-github.bat</span>，<b>双击它</b></li>
       </ol>
 
-      <h4>第 2 步 · 在黑窗口里粘贴一次仓库地址</h4>
+      <h4>第 2 步 · 跟着窗口走，最多回答两个问题</h4>
       <p>
-        脚本会问你仓库地址。把 STEP 01 建好的那个地址粘进去、回车 ——
-        <b>这是全程唯一需要你输入的东西</b>，剩下的它自己做。
+        新版流程是<b>先诊断、再推送</b>。窗口会依次做六件事，每做完一件都把结果打出来 ——
+        所以任何一步出问题，你都当场知道是<b>哪一步、什么原因</b>。
       </p>
 
-      <div class="note tip">
-        <span class="ic">▸</span>
-        <div>
-          <b>地址在哪拿：</b>打开你新建的仓库网页，点绿色的 <span class="mono">Code</span> 按钮，
-          复制 <span class="mono">HTTPS</span> 那一行。它长这样：
-          <span class="mono">https://github.com/你的用户名/herinfo-ios.git</span>
-        </div>
-      </div>
-
-      <h4>这个脚本替你做了哪五件事</h4>
       <table>
         <tr><th>它会做</th><th>为什么要这么做</th></tr>
         <tr>
           <td>① 找到 git</td>
-          <td>这台机器上 git 不在系统 PATH 里。脚本按「便携版 → 正式版 → PATH」三个位置依次找，不依赖任何环境配置。</td>
+          <td>这台电脑上 git 不在系统 PATH 里（也因此没有 Git Bash 可开）。
+              脚本按「便携版 → 正式版 → PATH」三个位置依次找，不依赖任何环境配置。</td>
         </tr>
         <tr>
           <td>② 进入仓库目录</td>
-          <td>用<b>脚本自己的位置</b>定位，不写死路径 —— 所以它<b>必须待在 <span class="mono">她的信息本-iOS/</span> 里</b>，挪出去就认不到了。</td>
+          <td>用<b>脚本自己的位置</b>定位，不写死路径 —— 所以它<b>必须待在
+              <span class="mono">她的信息本-iOS/</span> 里</b>，挪出去就认不到了。</td>
         </tr>
         <tr>
-          <td>③ 关联远程仓库</td>
-          <td>执行 <span class="mono">git remote add origin</span>，告诉本地仓库「要推到哪儿」。只做一次，之后重跑会自动跳过。</td>
+          <td>③ 确认是仓库 + 报本地状态</td>
+          <td>顺便告诉你本地有几个提交、工作区干不干净 —— 推送前心里有数。</td>
         </tr>
         <tr>
-          <td>④ 配置登录方式</td>
-          <td>执行 <span class="mono">git config --global credential.helper manager</span>。不配的话每次推送都要手打 Token；配了之后弹一次浏览器授权就够了。</td>
+          <td>④ 检查有没有代理</td>
+          <td>代理是<b>最隐蔽</b>的一类原因：它不在 git 里，配错了报错却长得像网络问题。</td>
         </tr>
         <tr>
-          <td>⑤ 推送</td>
-          <td>执行 <span class="mono">git push -u origin main</span>。<span class="mono">-u</span> 把本地 <span class="mono">main</span> 和远程绑定，以后只要敲 <span class="mono">git push</span>。</td>
+          <td>⑤ <b>先测地址，再推送</b></td>
+          <td>这是新版最重要的改动。它用 <span class="mono">git ls-remote</span>
+              单独试一次连接，把 git 的<b>原始报错原样打出来</b>，
+              再按「找不到仓库 / 登录被拒 / 网络不通」分别给处置办法。
+              找不到仓库时，还会顺手<b>列出你账号下真实存在的仓库名</b>。</td>
+        </tr>
+        <tr>
+          <td>⑥ 看远程空不空，然后推</td>
+          <td>远程非空就会先告诉你远程上有什么，问你要不要覆盖 ——
+              而不是等你撞上 <span class="mono">rejected</span> 再自己猜。</td>
         </tr>
       </table>
 
-      <h4>黑窗口里出现红字，对着这张表看</h4>
+      <div class="note tip">
+        <span class="ic">▸</span>
+        <div>
+          <b>地址在哪拿：</b>打开仓库网页，<b>浏览器地址栏里那一行</b>就是最准的
+          （比点绿色 <span class="mono">Code</span> 按钮更不容易拿错）。
+          形如 <span class="mono">https://github.com/你的用户名/仓库名</span> ——
+          结尾的 <span class="mono">.git</span> 有没有都行。
+          <br><br>
+          <b>我已经把本地仓库的地址改成 <span class="mono">…/haohao234/She.git</span> 了</b>，
+          所以窗口弹出来时<b>直接按回车</b>就行。如果那不是你要的仓库，
+          在窗口里粘贴正确的地址再回车，脚本会当场验证给你看。
+        </div>
+      </div>
+
+      <h4>窗口里出现红字，对着这张表看</h4>
       <table>
-        <tr><th>窗口里的话</th><th>意思 · 怎么办</th></tr>
+        <tr><th>窗口里的话</th><th>判断 · 怎么办</th></tr>
         <tr>
-          <td>repository not found</td>
-          <td>地址拼错了。多半是用户名或仓库名差了一个字 —— 回仓库网页重新复制一次完整地址。</td>
+          <td>Repository not found</td>
+          <td><b>地址里的用户名或仓库名不对。</b>脚本会当场列出你账号下的仓库名，对着改。
+              注意：私有仓库若登录没成功，报的也是这一句。</td>
         </tr>
         <tr>
           <td>rejected / fetch first</td>
-          <td>远程仓库不是空的。原因是建仓库时勾了 README / .gitignore / License。<b>删掉重建一个空仓库</b>即可。</td>
+          <td><b>远程不是空的</b>（建仓库时勾了 README / .gitignore / License）。
+              脚本会先问你要不要覆盖 —— 自动生成的 README 覆盖掉没有损失。
+              想彻底干净，就删掉仓库重建一个「三个勾都不勾」的。</td>
         </tr>
         <tr>
           <td>Authentication failed</td>
-          <td>登录没过。重跑脚本；若弹的是「用户名 / 密码」框，密码栏填 <b>Personal Access Token</b>（见下方说明）。</td>
+          <td>登录没过。重跑一次；若弹的是「用户名 / 密码」框，密码栏填
+              <b>Personal Access Token</b>（见下方说明）。还不行就清掉旧凭据再试。</td>
         </tr>
         <tr>
-          <td>timed out</td>
-          <td>网络问题。试试手机热点，或改用 SSH 方式。</td>
+          <td>Failed to connect / timed out / Connection was reset</td>
+          <td><b>网络没连上 github.com。</b>换个网络最快 —— 手机热点往往一次就通。
+              先用浏览器试试 github.com 能不能打开：能打开，就说明是 git 这条路的问题。</td>
+        </tr>
+        <tr>
+          <td>CONNECT tunnel failed / 502</td>
+          <td><b>代理的问题。</b>你开了代理 / VPN 但它没在正常运行，或不放行 github.com。
+              脚本遇到这类错误会自动再试一次「绕开代理」的直连 ——
+              而且只在网络类错误时才绕，免得把地址写错误诊成网络问题。</td>
         </tr>
         <tr>
           <td>一闪而过 / 没反应</td>
-          <td>脚本跑完了但你没看清。重新双击一次即可 —— 本地提交还在，重跑是安全的。</td>
+          <td>脚本跑完了但你没看清。窗口最后一行写着结果；实在没看到就打开
+              <span class="mono">推送日志.txt</span>。重跑是安全的，本地提交不会丢。</td>
         </tr>
       </table>
 
@@ -374,23 +425,34 @@
         </div>
       </div>
 
+      <h4>这次新加的：一份「推送日志.txt」</h4>
+      <p>
+        脚本每次运行都会在同一个文件夹里留一份 <span class="mono">推送日志.txt</span> ——
+        里面是时间、用哪个 git、远程地址、以及 <b>git 最后一段原始输出</b>。
+        <b>窗口里的字看不清、或者结果不是我列的那几类，就把这个文件发我</b>，不用你复述。
+        （它已经被 <span class="mono">.gitignore</span> 排除，不会被提交进去。）
+      </p>
+
       <div class="hr"></div>
 
       <h4>脚本跑不起来时的手动方式（备用）</h4>
       <p class="tiny">
-        下面三条是脚本内部真实执行的命令。想自己敲的话，需要一个能识别 <span class="mono">git</span> 的终端 ——
-        装一个 <b>Git for Windows</b>（装完开始菜单才有 Git Bash），或直接用完整路径调用本机已有的便携版。
+        下面是脚本内部真实执行的命令。想自己敲的话，需要一个能识别 <span class="mono">git</span>
+        的终端 —— 本机<b>没有</b> Git Bash，得先装一个 <b>Git for Windows</b>，
+        或者用完整路径调用随工具附带的便携版 git。远程地址已经替你配好了。
       </p>
       <div class="codewrap">
         <button class="cp" data-copy="cmd2">复制</button>
 <pre id="cmd2"><span class="c"># ① 进入仓库目录（本地仓库已经建好，不需要再 init）</span>
 <span class="g">cd</span> <span class="a">"D:/workbwenjian/2026-09-10-14-54-12/她的信息本-iOS"</span>
 
-<span class="c"># ② 关联远程仓库 —— 把 URL 换成你自己的</span>
-<span class="g">git remote add origin</span> <span class="a">https://github.com/你的用户名/herinfo-ios.git</span>
+<span class="c"># ② 先单独测一次地址 —— 这一步就能分清是「地址错」还是「网络错」</span>
+<span class="g">git ls-remote --heads</span> <span class="a">https://github.com/haohao234/She.git</span>
 
-<span class="c"># ③ 推上去</span>
-<span class="g">git push -u origin main</span></pre>
+<span class="c"># ③ 推送。远程非空（有个自动生成的 README）时会被拒绝，那就加 --force</span>
+<span class="g">git push -u origin main</span>
+<span class="c"># 如果报 rejected：</span>
+<span class="g">git push -u origin main</span> <span class="a">--force</span></pre>
       </div>
 
       <div class="note warn">
