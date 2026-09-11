@@ -135,6 +135,28 @@
   tr:last-child td{border-bottom:0}
   td:first-child{white-space:nowrap; color:var(--t2)}
 
+  /* ── 步骤说明（STEP 内部的小标题与步骤列表） ── */
+  .body > h4{
+    font-size:13.5px; font-weight:600; margin:24px 0 10px; letter-spacing:-.005em;
+    display:flex; align-items:center; gap:8px; color:var(--t1);
+  }
+  .body > h4::before{
+    content:''; width:3px; height:13px; border-radius:2px;
+    background:var(--brand); flex:0 0 auto;
+  }
+  .body > h4:first-of-type{margin-top:2px}
+  .body ol.how{margin:0; padding-left:22px; font-size:13px; line-height:1.85; color:var(--t2)}
+  .body ol.how > li{margin-bottom:10px}
+  .body ol.how > li:last-child{margin-bottom:0}
+  .body ol.how b{color:var(--t1)}
+  .body ol.how .codewrap{margin:9px 0 0}
+  kbd{
+    display:inline-block; font-family:"JetBrains Mono",monospace; font-size:11.5px;
+    line-height:1.45; padding:1.5px 6px; margin:0 1px; border-radius:5px;
+    background:#fff; border:1px solid var(--line2); border-bottom-width:2px;
+    color:var(--t1); white-space:nowrap;
+  }
+
   /* ── 成功/失败对照 ───────────────── */
   .two{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:16px}
   @media (max-width:640px){ .two{grid-template-columns:1fr} }
@@ -246,14 +268,119 @@
     <div class="step-head">
       <div class="num">2</div>
       <div class="tt">
-        <h3>关联远程并推送</h3>
-        <p>两条命令，复制粘贴到 Git Bash</p>
+        <h3>运行推送脚本</h3>
+        <p>双击一个文件，粘贴一次地址</p>
       </div>
       <div class="chk"><input type="checkbox" aria-label="第 2 步完成"></div>
     </div>
     <div class="body">
-      <p>打开 <b>Git Bash</b>（开始菜单搜「Git Bash」），粘贴下面两行。第一行里的 URL 换成你刚建的那个仓库地址。</p>
 
+      <div class="note warn">
+        <span class="ic">⚠</span>
+        <div>
+          <b>先纠正上一版的一句错话：这台电脑上没有 Git Bash。</b>
+          Git Bash 是装了 <b>Git for Windows</b> 之后才有的；这台机器上装的是随工具附带的<b>便携版</b> ——
+          它不进开始菜单，也不在系统 PATH 里（直接敲 <span class="mono">git</span> 会提示「不是内部或外部命令」）。
+          所以「开始菜单搜 Git Bash」对你<b>不成立</b>，那一步作废。
+          <br><br>
+          <b>但你不需要它。</b>要敲的命令已经封成一个双击就能跑的文件，机器上现成的 git 也够用。
+        </div>
+      </div>
+
+      <h4>第 1 步 · 把那个文件找出来</h4>
+      <ol class="how">
+        <li>按 <kbd>Win</kbd> + <kbd>E</kbd> 打开「文件资源管理器」</li>
+        <li>点一下顶部的<b>地址栏</b>（平时显示「此电脑」的那一条），粘贴下面这行，按 <kbd>Enter</kbd>：
+          <div class="codewrap">
+            <button class="cp" data-copy="path2">复制</button>
+<pre id="path2">D:\workbwenjian\2026-09-10-14-54-12\她的信息本-iOS</pre>
+          </div>
+        </li>
+        <li>在打开的文件夹里找到 <span class="mono">push-to-github.bat</span>，<b>双击它</b></li>
+      </ol>
+
+      <h4>第 2 步 · 在黑窗口里粘贴一次仓库地址</h4>
+      <p>
+        脚本会问你仓库地址。把 STEP 01 建好的那个地址粘进去、回车 ——
+        <b>这是全程唯一需要你输入的东西</b>，剩下的它自己做。
+      </p>
+
+      <div class="note tip">
+        <span class="ic">▸</span>
+        <div>
+          <b>地址在哪拿：</b>打开你新建的仓库网页，点绿色的 <span class="mono">Code</span> 按钮，
+          复制 <span class="mono">HTTPS</span> 那一行。它长这样：
+          <span class="mono">https://github.com/你的用户名/herinfo-ios.git</span>
+        </div>
+      </div>
+
+      <h4>这个脚本替你做了哪五件事</h4>
+      <table>
+        <tr><th>它会做</th><th>为什么要这么做</th></tr>
+        <tr>
+          <td>① 找到 git</td>
+          <td>这台机器上 git 不在系统 PATH 里。脚本按「便携版 → 正式版 → PATH」三个位置依次找，不依赖任何环境配置。</td>
+        </tr>
+        <tr>
+          <td>② 进入仓库目录</td>
+          <td>用<b>脚本自己的位置</b>定位，不写死路径 —— 所以它<b>必须待在 <span class="mono">她的信息本-iOS/</span> 里</b>，挪出去就认不到了。</td>
+        </tr>
+        <tr>
+          <td>③ 关联远程仓库</td>
+          <td>执行 <span class="mono">git remote add origin</span>，告诉本地仓库「要推到哪儿」。只做一次，之后重跑会自动跳过。</td>
+        </tr>
+        <tr>
+          <td>④ 配置登录方式</td>
+          <td>执行 <span class="mono">git config --global credential.helper manager</span>。不配的话每次推送都要手打 Token；配了之后弹一次浏览器授权就够了。</td>
+        </tr>
+        <tr>
+          <td>⑤ 推送</td>
+          <td>执行 <span class="mono">git push -u origin main</span>。<span class="mono">-u</span> 把本地 <span class="mono">main</span> 和远程绑定，以后只要敲 <span class="mono">git push</span>。</td>
+        </tr>
+      </table>
+
+      <h4>黑窗口里出现红字，对着这张表看</h4>
+      <table>
+        <tr><th>窗口里的话</th><th>意思 · 怎么办</th></tr>
+        <tr>
+          <td>repository not found</td>
+          <td>地址拼错了。多半是用户名或仓库名差了一个字 —— 回仓库网页重新复制一次完整地址。</td>
+        </tr>
+        <tr>
+          <td>rejected / fetch first</td>
+          <td>远程仓库不是空的。原因是建仓库时勾了 README / .gitignore / License。<b>删掉重建一个空仓库</b>即可。</td>
+        </tr>
+        <tr>
+          <td>Authentication failed</td>
+          <td>登录没过。重跑脚本；若弹的是「用户名 / 密码」框，密码栏填 <b>Personal Access Token</b>（见下方说明）。</td>
+        </tr>
+        <tr>
+          <td>timed out</td>
+          <td>网络问题。试试手机热点，或改用 SSH 方式。</td>
+        </tr>
+        <tr>
+          <td>一闪而过 / 没反应</td>
+          <td>脚本跑完了但你没看清。重新双击一次即可 —— 本地提交还在，重跑是安全的。</td>
+        </tr>
+      </table>
+
+      <div class="note alt">
+        <span class="ic">▸</span>
+        <div>
+          <b>万一弹出的是「用户名 / 密码」框：</b>
+          GitHub 早已不接受账号密码。去
+          <span class="mono">github.com/settings/tokens</span> → <span class="mono">Generate new token</span>，
+          勾上 <span class="mono">repo</span> 权限，生成后<b>立刻复制</b>（只显示这一次），密码栏填它。
+        </div>
+      </div>
+
+      <div class="hr"></div>
+
+      <h4>脚本跑不起来时的手动方式（备用）</h4>
+      <p class="tiny">
+        下面三条是脚本内部真实执行的命令。想自己敲的话，需要一个能识别 <span class="mono">git</span> 的终端 ——
+        装一个 <b>Git for Windows</b>（装完开始菜单才有 Git Bash），或直接用完整路径调用本机已有的便携版。
+      </p>
       <div class="codewrap">
         <button class="cp" data-copy="cmd2">复制</button>
 <pre id="cmd2"><span class="c"># ① 进入仓库目录（本地仓库已经建好，不需要再 init）</span>
@@ -272,15 +399,6 @@
           <b>仓库根目录必须是 <span class="mono">她的信息本-iOS/</span> 本身，不能是它的上一层。</b>
           如果你把整个工作区推上去，<span class="mono">.github/workflows/</span> 就不在仓库根目录了 ——
            Actions 会<b>毫无反应</b>，而且不报任何错，它只是「没找到工作流」。这是最容易踩的坑。
-        </div>
-      </div>
-
-      <div class="note tip">
-        <span class="ic">▸</span>
-        <div>
-          <b>首次 push 会弹窗要你登录 GitHub</b>（Git Credential Manager，浏览器授权一下就行）。
-          万一弹的是「用户名 / 密码」框：<b>GitHub 早就不收密码了</b>，
-          密码栏要填 <b>Personal Access Token</b>（github.com/settings/tokens 新建，勾 <span class="mono">repo</span> 权限）。
         </div>
       </div>
 

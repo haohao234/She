@@ -11,3 +11,7 @@ DerivedData/
 
 # macOS
 .DS_Store
+
+# 本机专用：双击就能推送的辅助脚本。
+# 它硬编码了本机的便携版 git 位置，对别人没意义，所以不进仓库。
+push-to-github.bat
