@@ -123,6 +123,18 @@ enum Category: String, CaseIterable, Codable, Identifiable {
         }
     }
 
+    /// 06 空态那句话。**按分类换，不用一句通用文案** ——
+    /// 「这个分类还没有记录」是对的但没温度：它描述的是数据库，
+    /// 而这句描述的是「你还不知道她什么」。画布 06 写的正是喜好那一句，原文照搬。
+    var emptyTitle: String {
+        switch self {
+        case .like:   return "还没有记下她的喜好"
+        case .trait_: return "还没有记下她什么样"
+        case .care:   return "还不知道她在意什么"
+        case .hate:   return "还不知道她讨厌什么"
+        }
+    }
+
     var soft: Color {
         switch self {
         case .like:   return C.warm

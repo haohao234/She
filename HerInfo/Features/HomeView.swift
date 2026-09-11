@@ -24,6 +24,7 @@ enum Route: Hashable {
     case search                       // 04 搜索 · 全局查找
     case recordDetail(id: String)     // 31 记录详情
     case recordEdit(id: String)       // 34 记录配图（新）
+    case starterEdit(topic: String)   // 21 首条记录引导 · 预填好的编辑器（新）
     case trash                        // 27 回收站
     case exportArchive                // 35 导出档案（新）
     case lock                         // 13 应用锁
@@ -102,7 +103,9 @@ struct RootView: View {
                 case .recordDetail(let id):
                     RecordDetailView(path: $path, recordID: id)
                 case .recordEdit(let id):
-                    RecordEditorView(path: $path, editingID: id)
+                    RecordEditorView(path: $path, editingID: id, starterID: "")
+                case .starterEdit(let topic):
+                    RecordEditorView(path: $path, editingID: "", starterID: topic)
                 case .trash:
                     TrashView(path: $path)
                 case .exportArchive:

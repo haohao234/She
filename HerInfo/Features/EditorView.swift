@@ -1,14 +1,21 @@
 //
 //  EditorView.swift
 //  对应画布 03 新增记录 · 自动保存 / 34 记录配图 · 插入照片
+//           / 21 首条记录引导 · 带引导的编辑器
 //
-//  03 与 34 是**同一个编辑器的两种态**：
+//  03 / 34 / 21 是**同一个编辑器的三种态**：
 //  - 新建态（03）：分类 → 标题 → 内容 → 标签 → 提醒开关
 //  - 编辑态（34）：在标题下插入**图片**字段，并显示「本地版本 N」
+//  - 引导态（21）：分类 / 标题 / 标签预填好，内容留白只给示范，
+//                   状态条换成「起手引导 · 标题已帮你填好」+「换一题」
 //
 //  34 屏那一条最要紧的产品判断是：**图片紧跟标题，不塞在正文下面**。
 //  一条「她说想要这个」配上照片，半年后还认得出是哪一款；纯文字不能。
 //  所以图片在编辑态里是一等字段，不是附件。
+//
+//  21 屏那一条是：**引导只做「填一半」，不做「替你写」**。
+//  真正拦住新用户的是「不知道写什么」，所以标题替他定了；
+//  而正文一个字都不预填 —— 填了他会以为那是标准答案，然后删掉重写。
 //
 
 import SwiftUI
@@ -21,6 +28,10 @@ struct RecordEditorView: View {
 
     /// 空 = 新建（03），非空 = 编辑（34）
     let editingID: String
+
+    /// 非空 = 21 屏的起手引导态。**它只在新建时才有意义** ——
+    /// 编辑一条已有的记录时不该再问「要不要换一题」。
+    let starterID: String
 
     @Environment(\.modelContext) private var ctx
     @Environment(\.dismiss) private var dismiss
@@ -37,6 +48,9 @@ struct RecordEditorView: View {
     @State private var loaded = false
     @State private var saveState: SaveState = .idle
 
+    /// 当前这一题。`nil` = 不是引导态 → 状态条显示自动保存状态。
+    @State private var starter: StarterTopic?
+
     /// 相册选择器的选中结果。**选完立刻落盘换成 hash，原图不留** ——
     /// 这一层如果留着 PhotosPickerItem，就等于把「原图」带进了数据模型，
     /// 而 PhotosPickerItem 换台设备就失效了，存它没有任何意义。
@@ -48,12 +62,25 @@ struct RecordEditorView: View {
     /// 31 屏那个「第 12 版」就成了一句没有含义的话。
     @State private var lastSnapshot = ""
 
-    private var isEditing: Bool { !editingID.isEmpty }
-    private var record: Record? { existing.first }
+    /// 新建时真正落盘出来的那一条。**必须自己拿着它。**
+    ///
+    /// `@Query` 的谓词在 `init` 里就定死了 —— 新建时用的是哨兵 id
+    /// `"\u{0}__new__"`（为了绕开 `#Predicate` 捕获变量的限制），
+    /// 而 `Record.newID()` 生成的是随机 id。**两者永远不会相等**，
+    /// 所以新插入的记录不会出现在 `existing` 里，`record` 会一直是 nil。
+    ///
+    /// 后果是：每改一次内容都走「新建」分支 → 每 0.8 秒的自动保存都再插一条。
+    /// 打字慢一点，列表里就会出现好几条几乎一样的记录。
+    /// 自己拿着这条引用，「新建」只会发生一次。
+    @State private var created: Record?
 
-    init(path: Binding<[Route]>, editingID: String) {
+    private var isEditing: Bool { !editingID.isEmpty }
+    private var record: Record? { created ?? existing.first }
+
+    init(path: Binding<[Route]>, editingID: String, starterID: String) {
         self._path = path
         self.editingID = editingID
+        self.starterID = starterID
         // 新建时给一个永不匹配的 id，而不是在 #Predicate 里写分支 ——
         // #Predicate 宏对捕获变量的表达式很挑，用常量最稳。
         let target = editingID.isEmpty ? "\u{0}__new__" : editingID
@@ -90,28 +117,19 @@ struct RecordEditorView: View {
             .padding(.horizontal, S.screen)
             .frame(height: 44)
 
-            // 自动保存条。**它是状态条，不是进度条** ——
+            // 状态条。**它是状态条，不是进度条** ——
             // 不说「还差几条」，只回答「我记下来了吗」。记录一旦变成任务就没人愿意记。
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(C.care)
-                    .frame(width: 14, height: 14)
-                    .overlay(
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.white)
-                    )
-                Text(saveState.label)
-                    .font(Typo.numCaption)
-                    .foregroundStyle(C.ink2)
-                Spacer()
-                Text("本地版本 \(version)")
-                    .font(Typo.numCaption)
-                    .foregroundStyle(C.ink3)
+            //
+            // 21 屏的引导态换成 StarterHintBar（见 StarterPrompts.swift）：
+            // 两条讲的都是「现在是什么情况」，叠在一起就是一个没人读的双行状态区，
+            // 而这一屏真正要说清楚的只有一件事 —— 标题是替你填的，可以换。
+            Group {
+                if let starter {
+                    StarterHintBar(topic: starter) { shuffleStarter() }
+                } else {
+                    autoSaveBar
+                }
             }
-            .padding(.horizontal, 12)
-            .frame(height: 34)
-            .background(C.moss, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .padding(.horizontal, S.screen)
             .padding(.bottom, 10)
 
@@ -131,16 +149,28 @@ struct RecordEditorView: View {
                     // —— 34 屏的图片字段：紧跟标题 ——
                     // 组件只画格子，「从相册取图」这一步归这里 ——
                     // 把 PhotosUI 塞进设计系统会让它绑死一个平台能力。
-                    FieldBlock(label: "图片",
-                               caption: photoHashes.isEmpty ? nil : "\(photoHashes.count)/\(Photo.maxPerRecord)") {
-                        PhotoGrid(hashes: $photoHashes, onAdd: { pickingPhotos = true })
-                        Text("长按可以拖动排序 · 最多 \(Photo.maxPerRecord) 张")
-                            .font(Typo.caption)
-                            .foregroundStyle(C.ink3)
+                    //
+                    // **只在编辑态出现。** 画布上三处是一致的：03（新建）、21（起手引导）
+                    // 的字段都是「分类 → 标题 → 内容 → 标签 → 提醒」，没有图片；
+                    // 只有 34（记录配图 · 插入照片）在标题和内容之间插了这一段。
+                    // 也就是说设计的意思是：**新建时先把话记下来，照片是之后回来补的** ——
+                    // 03 自己那句提示「重复编辑会保留历史版本」说的也是这个。
+                    if isEditing {
+                        FieldBlock(label: "图片",
+                                   caption: photoHashes.isEmpty ? nil : "\(photoHashes.count)/\(Photo.maxPerRecord)") {
+                            PhotoGrid(hashes: $photoHashes, onAdd: { pickingPhotos = true })
+                            Text("长按可以拖动排序 · 最多 \(Photo.maxPerRecord) 张")
+                                .font(Typo.caption)
+                                .foregroundStyle(C.ink3)
+                        }
                     }
 
                     FieldBlock(label: "内容") {
-                        SField(placeholder: "她怎么说的、当时是什么情况…", text: $body_, multiline: true)
+                        // 21 屏那个「只给一条示范」就落在这里：
+                        // 它是 **placeholder**，不是预填值 —— 正文一格是空的。
+                        SField(placeholder: starter?.placeholder ?? "她怎么说的、当时是什么情况…",
+                               text: $body_,
+                               multiline: true)
                     }
 
                     FieldBlock(label: "标签") {
@@ -226,6 +256,65 @@ struct RecordEditorView: View {
         .onChange(of: picked) { _, items in ingest(items) }
     }
 
+    /// 03 / 34 那条状态条。抽出来只是因为 21 屏要把它整条换掉（见上面 body 里的 Group）。
+    @ViewBuilder
+    private var autoSaveBar: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(C.care)
+                .frame(width: 14, height: 14)
+                .overlay(
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white)
+                )
+            Text(saveState.label)
+                .font(Typo.numCaption)
+                .foregroundStyle(C.ink2)
+            Spacer()
+            Text("本地版本 \(version)")
+                .font(Typo.numCaption)
+                .foregroundStyle(C.ink3)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 34)
+        .background(C.moss, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    // MARK: 21 屏 · 起手引导
+
+    /// 把一题「填一半」落到字段上。
+    ///
+    /// **`body_` 一定是空的。** 这一条是这个功能成立与否的关键：
+    /// 预填正文等于替用户写了答案，他会以为「原来要这么写」，
+    /// 然后要么照抄，要么删干净重来 —— 两种都比空白更费事。
+    /// 所以这里只搬「选」的字段（分类 / 标签），加一个替他定好的标题。
+    private func applyStarter(_ topic: StarterTopic) {
+        cat = topic.cat
+        title = topic.title
+        tags = topic.tags
+        body_ = ""
+        remindsMe = true
+    }
+
+    /// 「换一题」。
+    ///
+    /// 三条边界，都是「用户已经动过的东西不碰」：
+    ///   · 标题 —— 只在**他没改过**的时候跟着换。他已经自己起了一个名字，
+    ///            说明他不在用这题了，这时候覆盖他等于把他刚写的字删了。
+    ///   · 分类 / 标签 —— 跟着换。它们是「替他选」的字段，且换完在屏幕上看得见，
+    ///                   随时可以点回去。
+    ///   · 正文 —— **永远不碰**。他可能已经写了两行，换题不该让那些字消失。
+    private func shuffleStarter() {
+        guard let cur = starter else { return }
+        let nxt = cur.next
+        let titleUntouched = title == cur.title
+        starter = nxt
+        if titleUntouched { title = nxt.title }
+        cat = nxt.cat
+        tags = nxt.tags
+    }
+
     // MARK: 配图
 
 
@@ -263,14 +352,30 @@ struct RecordEditorView: View {
     private func loadIfNeeded() {
         guard !loaded else { return }
         loaded = true
-        guard let r = record else { return }
-        cat = r.cat
-        title = r.title
-        body_ = r.body
-        tags = r.tags
-        photoHashes = r.photos.sorted { $0.order < $1.order }.map(\.hash)
-        remindsMe = r.reminder?.isOn ?? false
-        version = r.version
+
+        if let r = record {
+            cat = r.cat
+            title = r.title
+            body_ = r.body
+            tags = r.tags
+            photoHashes = r.photos.sorted { $0.order < $1.order }.map(\.hash)
+            remindsMe = r.reminder?.isOn ?? false
+            version = r.version
+            lastSnapshot = snapshot
+            return
+        }
+
+        // 新建 + 带起手题（21 屏）。
+        // 放在这里而不是 init 里：`@State` 的初始值在 init 里赋值会被
+        // SwiftUI 在首次 body 求值后覆盖掉，只有 onAppear 之后写才留得住。
+        if !starterID.isEmpty {
+            let t = StarterTopic.from(starterID)
+            starter = t
+            applyStarter(t)
+        }
+
+        // **「刚打开时的样子」也要记成基线**（新建态尤其重要）。
+        // `save` 拿它当「用户到底写没写东西」的判据 —— 见下面的 guard。
         lastSnapshot = snapshot
     }
 
@@ -292,8 +397,21 @@ struct RecordEditorView: View {
         if let r = record {
             target = r
         } else {
-            target = Record(cat: cat, title: title, body: body_, tags: tags)
-            ctx.insert(target)
+            // **新建时，「和刚打开时一模一样」就不建记录。**
+            //
+            // 这条守卫是 21 屏带进来的：起手引导会**预填**标题（「她爱吃什么」），
+            // 而预填会触发 onChange → 0.8 秒后自动落盘 → 列表里凭空多出一条
+            // 标题是「她爱吃什么」、正文空白的记录。
+            // 它不是用户记的，是 App 自己写的。用户点开起手卡又退出去，
+            // 结果多了一条记录 —— 这种 bug 看起来完全不像 bug，只会让人困惑。
+            //
+            // 判据复用 `lastSnapshot`（它在 `loadIfNeeded` 末尾被设成初始态）：
+            // 内容跟初始态一致 = 用户一个字都没写。
+            guard snapshot != lastSnapshot else { return }
+            let fresh = Record(cat: cat, title: title, body: body_, tags: tags)
+            ctx.insert(fresh)
+            created = fresh
+            target = fresh
         }
 
         target.cat = cat
@@ -345,9 +463,16 @@ struct RecordEditorView: View {
     /// 只有手动保存才弹。自动保存每 0.8 秒就可能落一次盘，
     /// 那个路径上弹提示会把屏幕变成闪光灯。
     private func saveAndLeave() {
+        // 什么都没写就按「保存记录」（21 屏起手卡点进来又直接退出，最容易走到这里）——
+        // 上面 `save` 会拒绝新建，于是**既不该留下记录，也不该弹提示**。
+        // 弹「已记下」是在说一句假话：用户什么都没记。
+        let willRecord = record != nil || snapshot != lastSnapshot
+
         save()
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         path.removeLast()
+
+        guard willRecord else { return }
         ToastCenter.shared.show(t.isEmpty ? "已记下" : "已记下「\(t)」")
     }
 

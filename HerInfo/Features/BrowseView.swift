@@ -43,6 +43,17 @@ struct BrowseView: View {
         }
     }
 
+    /// 空态里那个「新建一条」按钮。**整个 App 一条记录都没有时不显示** ——
+    /// 那种情况下三张起手卡就是入口，再给一个按钮只是多一个要读的东西。
+    ///
+    /// 显式写出返回类型，而不是在调用处写 `firstEver ? nil : (title:…, run:…)`：
+    /// `nil` 和元组放进同一个三元里，Swift 的类型推断偶尔会推不出来，
+    /// 而报错会落在离现场很远的地方。这里写清楚，调用处就只剩一个 `emptyAction`。
+    private var emptyAction: (title: String, run: () -> Void)? {
+        guard !all.isEmpty else { return nil }
+        return (title: "新建一条", run: { path.append(.recordEdit(id: "")) })
+    }
+
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 0) {
@@ -111,10 +122,34 @@ struct BrowseView: View {
 
                 ScrollView {
                     if list.isEmpty {
-                        EmptyState(symbol: "square.grid.2x2",
-                                   title: "这个分类还没有记录",
-                                   message: "看到什么就记一句，\n下次翻回来的时候你会庆幸记了",
-                                   action: ("新建一条", { path.append(.recordEdit(id: "")) }))
+                        // 06 空态。两层判断要分开：
+                        //  · 标题 —— 按**当前分类**换（「还没有记下她的喜好」…）
+                        //  · 起手卡组 —— 只在**整个 App 一条都没有**时给
+                        //
+                        // 这不是同一个条件。一个有 30 条记录的人切到空的「讨厌的事」，
+                        // 他要的是「换个分类看看」，不是被问一次「她爱吃什么」。
+                        // 三张卡是给第一次打开 App 的人的开场白，文案里
+                        // 「先从这三件开始」的「开始」就是这个意思。
+                        let firstEver = all.isEmpty
+
+                        VStack(spacing: 0) {
+                            EmptyState(
+                                symbol: "square.grid.2x2",
+                                title: cat.emptyTitle,
+                                message: firstEver
+                                    ? "想到就记一条，先从这三件开始"
+                                    : "看到什么就记一句，\n下次翻回来的时候你会庆幸记了",
+                                action: emptyAction
+                            )
+
+                            if firstEver {
+                                StarterCardGroup { topic in
+                                    path.append(.starterEdit(topic: topic.rawValue))
+                                }
+                                .padding(.horizontal, S.screen)
+                                .padding(.bottom, 24)
+                            }
+                        }
                     } else {
                         VStack(spacing: S.innerGapL) {
                             ForEach(list) { r in
