@@ -1263,26 +1263,38 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
       </ul>
     </div>
     <div class="card pad">
-      <h4>需要额外工作的（3 项，都是平台能力）</h4>
+      <h4>需要额外工作的（1 项）</h4>
       <ul class="tight">
-        <li><b>09 / 10 两屏本身已经写好了</b>（<span class="mono-s">MoodView.swift</span>）。
-            还差的只是 09 屏下半部分那四行<b>系统级入口</b>里的三行 ——
-            它们不是 View，是 iOS 平台能力：
+        <li><b>09 / 10 两屏已经写好</b>（<span class="mono-s">MoodView.swift</span>），
+            连四行系统级入口里的三行也通了。真正还剩的是最后一行：
           <ul class="tight" style="margin-top:8px">
-            <li><b>长按 App 图标</b>：在 <span class="mono-s">Info.plist</span> 里加
-                <span class="mono-s">UIApplicationShortcutItems</span>，再在 App 里接住 shortcut。
-                <b>不用新 target</b>。</li>
-            <li><b>快捷指令 / 锁屏小组件</b>：<span class="mono-s">AppIntent</span>
-                <b>可以定义在主 App 里</b>，会照样出现在快捷指令中。
-                只有要出锁屏小组件时，才需要额外加一个 WidgetKit 扩展。</li>
-            <li><b>分享扩展</b>：这一个<b>确实要新 target</b> ——
-                <span class="mono-s">app-extension</span> + 自己的 Info.plist 与
-                <span class="mono-s">NSExtension</span> 键。</li>
+            <li><b>分享扩展</b>：把别处的文字分享进来，存成一条记录。
+                这一个<b>确实要新 target</b> —— <span class="mono-s">app-extension</span>
+                + 自己的 Info.plist 与 <span class="mono-s">NSExtension</span> 键 + App Group。
+                注意它存的是<b>记录</b>不是<b>打标</b>，
+                所以它和通知扩展<b>不该共用一个契约文件</b>。</li>
           </ul>
         </li>
-        <li><b>四行里「在通知上直接换档位」已经是好的</b> —— 它走的是 36 屏那套通知内容扩展
-            （独立 target + 单向收件箱 + <span class="mono-s">drainMoodInbox</span>），早就在跑了。</li>
       </ul>
+      <div class="callout info" style="margin-top:12px">
+        <b>另外两行这一轮通了，而且都不用新 target：</b>
+        <ul class="tight" style="margin-top:8px">
+          <li><b>长按 App 图标</b>：<span class="mono-s">Info.plist</span> 里的
+              <span class="mono-s">UIApplicationShortcutItems</span> + 一个
+              <span class="mono-s">UIApplicationDelegate</span>。
+              它对「<b>漏了不报错</b>」这件事特别敏感 —— 有两处：
+              type 前缀与图标名，对不上时菜单照样显示、点下去只是没人处理。
+              还有一处更隐蔽：冷启动时那一项走的是
+              <span class="mono-s">didFinishLaunching</span> 的
+              <span class="mono-s">launchOptions</span>，不是
+              <span class="mono-s">performActionFor</span>；
+              <b>只接后者的话，「杀进程之后长按图标打标」会静默失效</b> ——
+              而那恰恰是最常用的路径。</li>
+          <li><b>快捷指令</b>：<span class="mono-s">AppIntent</span> 写在主 App 里就行
+              （<span class="mono-s">Features/MoodIntent.swift</span>），
+              会照样出现在系统「快捷指令」的动作列表里。</li>
+        </ul>
+      </div>
       <div class="callout info" style="margin-top:12px">
         <b>修正本文档早先写错的一条判断。</b>这里原先写的是情绪打标
         「要新建 <b>App Intent</b> 与 <b>Share Extension</b> 两个独立 target」——

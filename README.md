@@ -193,12 +193,36 @@ open HerInfo.xcodeproj
 
 | 还剩 | 性质 |
 |---|---|
-| **长按 App 图标** | 在 `Info.plist` 里加 `UIApplicationShortcutItems` + 在 App 里接住 shortcut。<br>**不用新 target** |
-| **快捷指令 / 锁屏小组件** | `AppIntent` **可以定义在主 App 里**（`import AppIntents` 就够了），会照样出现在快捷指令中。<br>只有要出锁屏小组件才需要 WidgetKit 扩展 |
-| **分享扩展** | 这个**确实要新 target**（`app-extension` + 自己的 Info.plist 与 `NSExtension` 键） |
+| **分享扩展** | 四行入口里剩下的这最后一行，**确实要新 target** ——<br>`app-extension` + 自己的 Info.plist 与 `NSExtension` 键 + App Group |
 
-**四行里「在通知上直接换档位」已经是好的** —— 那是 36 屏那套通知内容扩展
-（`HerInfoNotification` target + `HINotify.Inbox` 单向收件箱 + `drainMoodInbox`），早就在跑了。
+**另外两行这一轮通了：**
+
+- **长按 App 图标** —— `Info.plist` 里的 `UIApplicationShortcutItems`（三项，对应 09 屏那三个按钮）
+  \+ `QuickActionDelegate` 接住。**不用新 target。**
+  两处会悄悄失效的地方：`type` 的 `hi.mood.` 前缀必须与 `HerInfoStore.quickActionPrefix` 一致，
+  图标名必须与契约里的 `HINotify.Mood.symbol` 一致 —— 对不上时系统**照样显示菜单、
+  点下去只是没人处理**，不报任何错。
+  还有一处更隐蔽：冷启动（App 没在跑）时那一项是从 `launchOptions` 里取的，
+  走 `didFinishLaunching` 而不是 `performActionFor`。**只接后者的话，
+  「杀进程之后长按图标打标」会静默失效** —— 而这恰恰是最常用的路径（平时哪会挂着 App）。
+  两个回调都接带来的重复风险，由 `notePendingMood` 里那道 2 秒去重护栏兜住：
+  与其赌系统的回调行为，不如让「记一次」这件事本身幂等。
+- **快捷指令**（`Features/MoodIntent.swift`）—— `AppIntent` 就写在主 App 里，
+  `import AppIntents` 之后会自动出现在系统「快捷指令」的动作列表里。
+  `openAppWhenRun = false`：打标是 1 秒钟的事，
+  为了记一个标把用户从锁屏拽进 App，等于把轻动作做重了。
+  桥接用的 `MoodLevelOption` 只桥**三档** —— 与 09 屏那三个按钮一致；
+  也刻意**不把 `MoodLevel` 本身改成 `AppEnum`**，那会让数据模型去依赖 AppIntents。
+
+**四行里「在通知上直接换档位」早就是好的** —— 那是 36 屏那套通知内容扩展
+（`HerInfoNotification` target + `HINotify.Inbox` 单向收件箱 + `drainMoodInbox`）。
+
+> **三个入口（锁屏 / 快捷指令 / 长按图标）走的是同一个模式**：入口只负责把意图记下来
+> （`HerInfoStore.notePendingMood`），落库统一交给 `drainInbox`。
+> 好处不只是省事 —— 三处不会各写一套写库逻辑，`MoodSource` 也就不会有人在某一路上记错。
+> 这也是为什么 `MoodSource` 里 `.shortcut` 与 `.quickAction` 是**两个值**：
+> 它们看起来都是「系统级入口」，但一个是喊出来的、一个是按出来的，
+> 出问题时排查方向完全不同，合成一个就再也分不清了。
 
 > **顺手修正一条早先下的判断。** 交接文档里原先写的是「09 / 10 情绪打标要新建**两个** target
 > （App Intent + Share Extension）」，这句话的一半是错的：**`AppIntent` 不需要新 target** ——

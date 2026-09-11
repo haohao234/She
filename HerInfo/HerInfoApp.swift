@@ -14,11 +14,21 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
 
 @main
 struct HerInfoApp: App {
 
     @Environment(\.scenePhase) private var scenePhase
+
+    /// 长按 App 图标那一项的接法。
+    ///
+    /// **只能走 `UIApplicationDelegate`** —— SwiftUI 没有对应的场景回调，
+    /// `.onOpenURL` 收的是 URL，接不到 shortcut。
+    /// 它只做一件事：把「打了哪一档」记进待落库队列。
+    /// 落库交给下面同一个 `drainInbox`，因为此刻 `ModelContext` 还拿不到 ——
+    /// 容器是 App 这个结构体的属性，而 delegate 比它先存在。
+    @UIApplicationDelegateAdaptor(QuickActionDelegate.self) private var quickActions
 
     /// 一个容器，全 App 共用。
     /// 建失败时**不要静默退回内存库** —— 那会让用户以为数据存下来了，
@@ -98,11 +108,47 @@ struct HerInfoApp: App {
         drainInbox()
     }
 
-    /// 把通知扩展丢进共享收件箱的打标落成真正的记录。
-    /// **启动与每次回前台各一次** —— 用户可能在 App 从没打开过的情况下，
-    /// 只在锁屏上打了标，那些打标一直躺在收件箱里等这一步。
+    /// 把两个快捷入口记下的打标落成真正的记录。
+    /// **启动与每次回前台各一次** —— 用户完全可能在 App 从没打开过的情况下，
+    /// 只在锁屏（或快捷指令、长按菜单）上打了标，那些打标一直躺在队列里等这一步。
     @MainActor
     private func drainInbox() {
-        HerInfoStore.drainMoodInbox(into: container.mainContext)
+        let ctx = container.mainContext
+        // ① 通知扩展丢进共享收件箱的（跨进程，走 App Group）
+        HerInfoStore.drainMoodInbox(into: ctx)
+        // ② 长按图标 / 快捷指令记下的（不跨进程，走普通 UserDefaults）
+        HerInfoStore.drainQuickMood(into: ctx)
+    }
+}
+
+// MARK: - 长按 App 图标
+
+/// 处理长按图标菜单里被点中的那一项。
+///
+/// 两个回调都要接，缺一个就有半条路是哑的：
+///   · `performActionFor` —— App 已经在后台时走这里；
+///   · `didFinishLaunching` 的 `launchOptions` —— App **没在运行**时走这里。
+///
+/// 而第二种恰恰是最常用的路径（这个 App 平时不在后台挂着），
+/// 只接 `performActionFor` 的话，「杀进程之后长按图标打标」会静默失效。
+/// 两个都接带来的重复风险，由 `HerInfoStore.notePendingMood` 里那道
+/// 2 秒去重护栏兜住 —— 与其赌系统的回调行为，不如让记一次这件事本身幂等。
+final class QuickActionDelegate: NSObject, UIApplicationDelegate {
+
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions:
+                        [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        if let item = launchOptions?[.shortcutItem] as? UIApplicationShortcutItem {
+            HerInfoStore.acceptQuickAction(item.type)
+        }
+        return true
+    }
+
+    func application(_ application: UIApplication,
+                     performActionFor shortcutItem: UIApplicationShortcutItem,
+                     completionHandler: @escaping (Bool) -> Void) {
+        // 返回它是否被处理了 —— 认不出来的 type 要如实回 false，
+        // 而不是一律回 true 把问题吞掉。
+        completionHandler(HerInfoStore.acceptQuickAction(shortcutItem.type))
     }
 }

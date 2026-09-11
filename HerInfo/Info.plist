@@ -46,6 +46,43 @@
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 
+	<!-- ⑤ 长按 App 图标弹出的快捷菜单（09 屏那四行入口里的第一行）。
+	        只放三项 —— 正好对应 09 屏那三个按钮。手动打标只给三档，
+	        这里也就只放三项：菜单超过三项在真机上会被折叠成「更多」，
+	        那会把「1 秒完成」变成要点两次。
+
+	        `type` 的 `hi.mood.` 前缀与 `HerInfoStore.quickActionPrefix` 必须一致，
+	        图标名与共享契约里 `HINotify.Mood.symbol` 必须一致。
+	        **对不上时系统不报任何错** —— 菜单照样显示，点下去只是没人处理。
+	        这是这一条最容易悄悄失效的地方。 -->
+	<key>UIApplicationShortcutItems</key>
+	<array>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>hi.mood.happy</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>她今天挺好</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>face.smiling</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>hi.mood.tired</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>她有点累</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>zzz</string>
+		</dict>
+		<dict>
+			<key>UIApplicationShortcutItemType</key>
+			<string>hi.mood.down</string>
+			<key>UIApplicationShortcutItemTitle</key>
+			<string>她心情差</string>
+			<key>UIApplicationShortcutItemIconSymbolName</key>
+			<string>cloud.rain</string>
+		</dict>
+	</array>
+
 	<!-- SwiftUI App 生命周期仍然需要一个启动屏声明。
 	        给空字典即表示「就是纯色启动屏」；完全没有这个键的表现是
 	        整个 App 被letterbox 成一圈黑边 —— 分辨率不匹配，但不报错。 -->

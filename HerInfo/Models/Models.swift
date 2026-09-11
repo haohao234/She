@@ -337,8 +337,15 @@ enum MoodLevel: String, Codable, CaseIterable {
 enum MoodSource: String, Codable {
     case manual        // 09 屏的快捷入口
     case lockscreen    // 14 屏通知上直接选
-    case shortcut      // 快捷指令
+    case shortcut      // 快捷指令 / 锁屏小组件
     case shareSheet    // 分享扩展
+    /// 长按 App 图标。
+    ///
+    /// **和 `.shortcut` 分成两个值，是有意的** —— 它们看起来都是「系统级入口」，
+    /// 但一个是用户喊出来的、一个是手指按出来的，出问题时排查方向完全不同；
+    /// 合成一个值就再也分不清了。加 case 不会影响已有数据
+    /// （rawValue 是持久的，老记录的旧值照旧解得出来）。
+    case quickAction
 }
 
 // MARK: - 历史版本
@@ -480,6 +487,84 @@ enum HerInfoStore {
             ctx.insert(Mood(level: level, at: m.at, source: .lockscreen))
         }
         try? ctx.save()
+    }
+
+    // MARK: 快捷入口的打标（长按图标 / 快捷指令）
+
+    /// 这两个入口**都可能在没有 `ModelContext` 的地方被触发**：
+    /// 快捷指令可以在 App 压根没起来时跑，长按图标是 App 刚被唤起的那一瞬。
+    /// 所以它们只负责「把意图记下来」，落库统一交给 `drainQuickMood` ——
+    /// 这和通知扩展那条单向收件箱是**同一个模式**，只是这一个不跨进程，
+    /// 用普通 `UserDefaults` 就够，不需要 App Group。
+    ///
+    /// 好处不只是省事：三个入口（锁屏 / 快捷指令 / 长按图标）因此不会各写一套
+    /// 写库逻辑，`MoodSource` 也就不会有人在某一路上记错。
+    private static let quickMoodKey = "hi.mood.pending"
+
+    /// 记下一个待落库的打标。
+    ///
+    /// **带一道 2 秒去重护栏。** 从长按菜单冷启动 App 时，系统可能既把那一项放进
+    /// `launchOptions`、又回调一次 `performActionFor`；两个回调都接的话就会记两条。
+    /// 而打标是用户自己给的信号，**多一条就是伪造**。
+    /// 去重比「只接其中一个回调」稳：后者要赌系统的行为，前者不用赌。
+    static func notePendingMood(_ level: MoodLevel, source: MoodSource) {
+        var list = (UserDefaults.standard.array(forKey: quickMoodKey) as? [[String: Any]]) ?? []
+        let now = Date.now.timeIntervalSince1970
+
+        if let last = list.last,
+           (last["level"] as? String) == level.rawValue,
+           (last["source"] as? String) == source.rawValue,
+           let t = last["at"] as? TimeInterval,
+           now - t < 2 {
+            return
+        }
+
+        list.append(["level": level.rawValue,
+                     "source": source.rawValue,
+                     "at": now])
+        UserDefaults.standard.set(list, forKey: quickMoodKey)
+    }
+
+    /// 落库。**先取走再落库** —— 与 `HINotify.Inbox.drain` 同一条纪律：
+    /// 取走之后才写库，中间被打断也不该重复落两次，
+    /// 而「宁可少一条也别多一条」是因为打标是用户自己给的信号，多一条就是伪造。
+    static func drainQuickMood(into ctx: ModelContext) {
+        let raw = (UserDefaults.standard.array(forKey: quickMoodKey) as? [[String: Any]]) ?? []
+        guard !raw.isEmpty else { return }
+        UserDefaults.standard.set([[String: Any]](), forKey: quickMoodKey)
+
+        for item in raw {
+            guard let lv = item["level"] as? String,
+                  let level = MoodLevel(rawValue: lv) else { continue }
+            let src = (item["source"] as? String).flatMap(MoodSource.init(rawValue:)) ?? .shortcut
+            let at: Date
+            if let t = item["at"] as? TimeInterval {
+                at = Date(timeIntervalSince1970: t)
+            } else {
+                at = .now
+            }
+            ctx.insert(Mood(level: level, at: at, source: src))
+        }
+        try? ctx.save()
+    }
+
+    /// 长按菜单那几项的 type 前缀。
+    ///
+    /// **Info.plist 里的字符串必须与它一致，而两边对不上时系统不报任何错** ——
+    /// 菜单照样显示，点下去也只是没人处理。所以这里写成常量，
+    /// 让 Info.plist 的注释里有处可引，两边不至于各写各的。
+    static let quickActionPrefix = "hi.mood."
+
+    /// 解析长按菜单里被点中的那一项（`hi.mood.down` → `.down`）。
+    /// 返回是否认得它 —— 不认得要如实回 false，让系统知道这次没被处理。
+    @discardableResult
+    static func acceptQuickAction(_ type: String) -> Bool {
+        guard type.hasPrefix(quickActionPrefix) else { return false }
+        guard let level = MoodLevel(rawValue: String(type.dropFirst(quickActionPrefix.count))) else {
+            return false
+        }
+        notePendingMood(level, source: .quickAction)
+        return true
     }
 
     /// 通知上的「今天不用了」。
