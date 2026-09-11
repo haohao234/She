@@ -307,6 +307,31 @@ enum MoodLevel: String, Codable, CaseIterable {
     var title: String  { hi?.title ?? rawValue }
     /// 09 屏用图标；锁屏通知上的那五个胶囊只有文字（一行要塞五个）。
     var symbol: String { hi?.symbol ?? "circle" }
+
+    /// **09 屏那三个能按的按钮。**
+    ///
+    /// 手动打标只给三档、锁屏通知给五档 —— 这是画布上的分法，不是遗漏：
+    /// 手动那三个是「1 秒完成」的大按钮，多了就快不起来；
+    /// 而锁屏通知那一行要塞下五个胶囊，位置决定它只能是五个。
+    /// `angry` / `calm` 因此只从锁屏来，09 屏上不出现。
+    static let boardCases: [MoodLevel] = [.happy, .tired, .down]
+
+    /// 09 屏按钮上的说法。
+    ///
+    /// **它和上面的 `title` 不是同一份东西，别合并。** `title` 转发自共享契约，
+    /// 那是**锁屏通知胶囊**上的文案（开心 / 累 / 低落 / 生气 / 平静）——
+    /// 一行五个，字越短越好；而 09 屏是三个大按钮，说法更口语
+    /// （挺好 / 有点累 / 心情差）。画布上这两处本来就是两套词，
+    /// 合并成一个会让其中一处变得别扭。
+    var boardTitle: String {
+        switch self {
+        case .happy: return "挺好"
+        case .tired: return "有点累"
+        case .down:  return "心情差"
+        case .angry: return "生气"
+        case .calm:  return "平静"
+        }
+    }
 }
 
 enum MoodSource: String, Codable {

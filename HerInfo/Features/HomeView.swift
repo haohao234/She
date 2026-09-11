@@ -30,6 +30,7 @@ enum Route: Hashable {
     case exportArchive                // 35 导出档案（新）
     case lock                         // 13 应用锁
     case notifyDenied                 // 24 通知权限 · 关掉之后（新）
+    case mood                         // 09 情绪打标 / 10 打标之后的建议（新）
 }
 
 // MARK: - 容器
@@ -118,6 +119,8 @@ struct RootView: View {
                     LockSetupView()
                 case .notifyDenied:
                     NotificationDeniedView(path: $path)
+                case .mood:
+                    MoodBoardView(path: $path)
                 }
             }
         }

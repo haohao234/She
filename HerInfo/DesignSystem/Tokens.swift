@@ -112,6 +112,23 @@ enum C {
 
     /// 开关轨道（关）。它不在公开的 16 个令牌里，因为只有开关一个组件用它。
     static let switchTrack = Color.dual(0xE3DCD3, 0x2E2823)
+
+    // 打标档位（09 / 10 屏）用的三组色，同样不进公开的 16 个。
+    //
+    // **不新造色相** —— 那三档正好落在已有的三个色相上：
+    // 挺好 = 在意的事（草木绿）／有点累 = 性格与外貌（暖褐）／心情差 = 主色（陶土红）。
+    // 所以实心色一律**引用**分类与主色，不把 hex 再抄一遍 ——
+    // 抄一遍就是一处将来会漂移的副本（深色档也就跟着自动对了）。
+    static let moodGood  = Category.care.tint
+    static let moodTired = Category.trait_.tint
+    static let moodDown  = C.primary
+
+    /// 浅底那三个是**打标档位专属**的：比分类卡那三块底更浅、更贴近页面底色。
+    /// 因为它们是「一整排能按的按钮」，底色压深了会让这一排从卡片里跳出来。
+    /// 深色档直接取分类那套暗底（同色相，不另调）。
+    static let moodGoodSoft  = Color.dual(0xF2F5EE, 0x232C20)
+    static let moodTiredSoft = Color.dual(0xF8F2E6, 0x352D1E)
+    static let moodDownSoft  = Color.dual(0xFBF8F4, 0x3A2621)
 }
 
 // MARK: - 分类

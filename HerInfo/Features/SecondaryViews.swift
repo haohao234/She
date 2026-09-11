@@ -19,8 +19,15 @@ struct ProfileDetailView: View {
 
     @Query private var profiles: [Profile]
     @Query(filter: #Predicate<Record> { $0.deletedAt == nil }) private var records: [Record]
+    /// 09 屏那个入口要显示「最近一次打标」。
+    @Query(sort: \Mood.at, order: .reverse) private var moods: [Mood]
 
     private var profile: Profile? { profiles.first }
+
+    private var moodLine: String {
+        guard let m = moods.first else { return "还没打过标 · 点一下记一次" }
+        return "最近一次 · \(m.at.monthDayCN) \(m.level.boardTitle)"
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -59,6 +66,40 @@ struct ProfileDetailView: View {
                                     .lineSpacing(8)
                             }
                         }
+
+                        // 09 屏的入口。
+                        //
+                        // **为什么放在这一页**：09 屏的标题就是「她的档案」，而这一页也是
+                        // 「她的档案」—— 打标属于「关于她」，不属于「我记了什么」。
+                        // 画布上 09 屏画了底部 tab（它是复制 01 首页的骨架改出来的），
+                        // 但全 App 的 push 屏都不带底栏，所以这里按 push 处理 ——
+                        // 这是落地差异，不是漏画。
+                        Button { path.append(.mood) } label: {
+                            SCard(padding: 14, shadow: false) {
+                                HStack(spacing: 12) {
+                                    ZStack {
+                                        Circle().fill(C.warm).frame(width: 36, height: 36)
+                                        Image(systemName: "heart.text.square")
+                                            .font(.system(size: 16))
+                                            .foregroundStyle(C.primary)
+                                    }
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("她今天怎么样？")
+                                            .font(Typo.bodyS)
+                                            .foregroundStyle(C.ink)
+                                        Text(moodLine)
+                                            .font(Typo.caption)
+                                            .foregroundStyle(C.ink3)
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(C.ink3)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .pressDown()
 
                         // 分类统计
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
