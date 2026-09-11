@@ -18,6 +18,11 @@
 import UIKit
 import SwiftUI
 import UserNotifications
+// 注意：UNNotificationContentExtension 与 UNNotificationContentExtensionResponseOption
+// 这两个类型属于 **UserNotificationsUI**，不是 UserNotifications。
+// 只 import UserNotifications 的报错是「cannot find type … in scope」——
+// 容易误以为是 iOS 版本或 target 配错，其实只差这一行。
+import UserNotificationsUI
 
 final class NotificationViewController: UIViewController, UNNotificationContentExtension {
 

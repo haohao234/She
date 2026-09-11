@@ -114,6 +114,13 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         SKIP_INSTALL: YES      # 扩展不单独产出安装包，它只跟着主 App 走
 
+    dependencies:
+      # UNNotificationContentExtension / …ResponseOption 定义在
+      # UserNotificationsUI 里（不是 UserNotifications —— 这两库名字很像，
+      # 少了这一个依赖，编译期会报「cannot find type … in scope」）。
+      # Swift 的自动链接通常能兜住，但显式写出来才不会在换构建方式时翻车。
+      - sdk: UserNotificationsUI.framework
+
 schemes:
   HerInfo:
     build:
