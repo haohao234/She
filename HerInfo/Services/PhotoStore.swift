@@ -212,7 +212,12 @@ enum PhotoStore {
         return set
     }
 
-    /// 图片占用的字节数。12 屏设置里的「占用空间」用它。
+    /// 图片占用的字节数。
+    ///
+    /// **目前画布上没有对应的入口** —— 12 屏内容区已经排满，加「占用空间」这一行
+    /// 要挤掉别的行，所以按约定不加。这两个函数留着是因为它们与上面的 `referencedHashes`
+    /// 同属「本地图片的家底」：真要加那一行时，直接 `humanSize(totalBytes())` 即可，
+    /// 不必回头补实现。**没有入口 ≠ 漏写。**
     static func totalBytes() -> Int64 {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else { return 0 }
         var total: Int64 = 0
