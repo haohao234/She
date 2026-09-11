@@ -1233,15 +1233,25 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
       <ul class="tight">
         <li>原先列在这里的 <b>30 筛选面板</b>（<span class="mono-s">SearchFilterView.swift</span>）、
             <b>07 历史版本对比</b>（<span class="mono-s">VersionHistoryView.swift</span>）、
+            <b>08 键盘工具栏</b>（<span class="mono-s">EditorView.swift</span> 里的
+            <span class="mono-s">KeyboardActionBar</span>），
             以及 <b>06 / 24 / 28 / 29</b> 都已经写好</li>
-        <li><b>08 键盘附件栏</b>是唯一还差的：底部按钮不被键盘挡住这件事已经是好的
-            （保存条在 <span class="mono-s">ScrollView</span> 下方，SwiftUI 的键盘避让会把它顶上去），
-            缺的是键盘上方那排「分类 / 标签 / 提醒」快捷胶囊
-            —— 少了它，填完标题想改分类就得先收键盘、滚上去、再等键盘弹回来。
-            （画布上还有一枚「记录时间」，但这一项在数据模型里不存在 ——
-            记的是 <span class="mono-s">createdAt</span> / <span class="mono-s">updatedAt</span>，
-            没有「这条是什么时候的事」这个字段，做之前要先定这个字段。）</li>
-      </ul>
+        <li><b>08 的第一句提醒</b>：那排胶囊<b>只能挂在
+            <span class="mono-s">placement: .keyboard</span> 上</b>，
+            不能自己画一条钉在屏幕底部。原型说明把这句讲得比文档还准 ——
+            「工具栏是键盘的附属条，不占用页面纵向空间，真机上它随键盘一起升降」。
+            自己画的话，键盘一收起就会留下一条孤零零的空条，而那正是 08 屏想避免的东西</li>
+        <li><b>08 的第二句提醒</b>：它装的是「键盘弹起来之后<b>够不到</b>的那几个字段」。
+            内容区里「记住这件事，合适的时候提醒我」那一行正好被键盘顶出可视区 ——
+            所以「提醒」那枚不是快捷方式，是<b>唯一的入口</b>。
+            也正因为这个，顺手补了一条 <span class="mono-s">onChange(of: remindsMe)</span>：
+            拨完开关接着打字才落盘、拨完直接退就丢，那这个入口就是假的</li>
+        <li><b>08 还差一枚「记录时间」，是故意没做</b>：数据模型里只有
+            <span class="mono-s">createdAt</span> / <span class="mono-s">updatedAt</span>
+            （记录什么时候被写下），没有「这件事是什么时候发生的」这个字段，
+            03 / 08 两屏的字段区里也都没有它。补这一枚要先定那个字段，
+            而它会牵动<b>导出、版本快照、通知契约</b>三处 ——
+            <b>留一个点了没反应的胶囊，比少一个更糟</b></li>
         <li><b>07 的一句提醒</b>：差异按<b>行</b>用计数池算（不取最长公共子序列），
             「恢复」是<b>把旧快照落成一个新版本</b>、不是回滚 ——
             所以恢复前的内容仍在历史里，恢复本身也可逆</li>

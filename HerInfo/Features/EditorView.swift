@@ -181,9 +181,7 @@ struct RecordEditorView: View {
                                 // 把 tiny 写在 tint 前面是编译不过的（"argument must precede"）。
                                 Pill(text: t, tint: C.primary, soft: C.fill, tiny: true)
                             }
-                            Pill(text: "＋ 新增标签", style: .dashed) {
-                                tags.append("新标签\(tags.count + 1)")
-                            }
+                            Pill(text: "＋ 新增标签", style: .dashed) { addTag() }
                         }
                     }
 
@@ -239,6 +237,17 @@ struct RecordEditorView: View {
         }
         .background(C.bg)
         .toolbar(.hidden, for: .navigationBar)
+        // 08 屏 · 键盘工具栏（见文件末尾的 KeyboardActionBar）。
+        // **必须挂在 `placement: .keyboard` 上**，不能自己画一条钉在屏幕底部。
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                KeyboardActionBar(category: cat,
+                                  reminderOn: remindsMe,
+                                  onPick: { cat = $0 },
+                                  onTag: { addTag() },
+                                  onReminder: { remindsMe.toggle() })
+            }
+        }
         .onAppear(perform: loadIfNeeded)
         // 自动保存：改动后 0.8s 落一次盘。
         // 用 debounce 而不是每次按键都写 —— 写库太频繁会让打字卡顿。
@@ -246,6 +255,11 @@ struct RecordEditorView: View {
         .onChange(of: body_) { _, _ in scheduleAutoSave() }
         .onChange(of: cat) { _, _ in scheduleAutoSave() }
         .onChange(of: photoHashes) { _, _ in scheduleAutoSave() }
+        // 提醒开关也要落盘。**这一条是 08 屏带进来的** ——
+        // 工具栏上那枚「提醒」把拨开关这个动作挪到了键盘上方，
+        // 拨完接着打字才落盘、拨完直接退就丢，那这个入口就是假的。
+        // 内容区那个 SoftSwitch 走同一条路径，两处永远一致。
+        .onChange(of: remindsMe) { _, _ in scheduleAutoSave() }
         // 相册。**用系统选择器，不自己写一个相册浏览界面** ——
         // 系统选择器只把用户勾中的那几张交给 App，不需要「访问整个相册」的权限。
         // 「她的照片只存在这台手机上，不会上传」这句话能被相信，前提就是这里。
@@ -279,6 +293,13 @@ struct RecordEditorView: View {
         .padding(.horizontal, 12)
         .frame(height: 34)
         .background(C.moss, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// 新增一个标签。
+    /// **内容区那颗「＋ 新增标签」与键盘工具栏上那枚「标签」共用它** ——
+    /// 两处各写一遍 `tags.append(…)`，将来改命名规则就会只改一处。
+    private func addTag() {
+        tags.append("新标签\(tags.count + 1)")
     }
 
     // MARK: 21 屏 · 起手引导
@@ -532,5 +553,75 @@ struct RecordEditorView: View {
             case .saved:   return "已自动保存 · 刚刚"
             }
         }
+    }
+}
+
+// MARK: - 08 屏 · 键盘工具栏
+
+/// 键盘上方那一条。
+///
+/// **它只存在于键盘弹起的时候，所以只能挂在 `placement: .keyboard` 上。**
+/// 原型说明把这件事讲得很准：「工具栏是键盘的附属条，不占用页面纵向空间，
+/// 真机上它随键盘一起升降，不需要单独控制显隐」。自己画一条钉在屏幕底部的话，
+/// 键盘一收起就会留下一条孤零零的空条 —— 那正是 08 屏想避免的。
+///
+/// 装的是「键盘弹起来之后够不到的那几个字段」：08 屏的内容区里，
+/// 「记住这件事，合适的时候提醒我」那一行正好被键盘顶出可视区，
+/// 这就是工具栏里要有一枚「提醒」的原因 —— 它不是快捷方式，是**唯一的入口**。
+///
+/// **字号用 12 不用画布的 11。** 画布那 11px 是为了让四枚胶囊在 375 宽里挤得下
+/// （四枚 + gap 8 + 左右各 20 正好占满）；真机键盘工具栏的宽度够，
+/// 就回到全 App 所有胶囊统一的 `Typo.pill`。落地差异，design 稿见 08 屏。
+///
+/// **画布上还有第四枚「记录时间」，这里刻意没做。** 它不是漏了：
+/// 数据模型里只有 `createdAt` / `updatedAt`（记录什么时候被写下），
+/// 没有「这件事是什么时候发生的」这个字段，03 / 08 两屏的字段区里也都没有它。
+/// 补这一枚要先定义那个字段 —— 它会牵动导出、版本快照与通知契约三处。
+/// **留一个点了没反应的胶囊，比少一个更糟**（08 屏那条「工具栏不占纵向空间」
+/// 的判断是同一个道理：不承诺不存在的交互）。
+private struct KeyboardActionBar: View {
+
+    let category: Category
+    let reminderOn: Bool
+    let onPick: (Category) -> Void
+    let onTag: () -> Void
+    let onReminder: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // 第一枚是「软选中」：warm 底 + 主色字。
+            // 它和内容区那排分类胶囊（`.selected` = 实心主色 + 白字）**不是同一个态** ——
+            // 这里陈述的只是「当前是什么」，不是「你正在选什么」。
+            // 做成实心会让人以为键盘上还挂着一个等着被确认的选项。
+            Menu {
+                ForEach(Category.allCases, id: \.self) { c in
+                    Button(c.title) { onPick(c) }
+                }
+            } label: {
+                chip("分类 · \(category.title)", soft: true)
+            }
+
+            Button { onTag() } label: { chip("标签") }
+                .buttonStyle(.plain)
+
+            Button { onReminder() } label: {
+                chip(reminderOn ? "提醒 · 开" : "提醒 · 关")
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func chip(_ text: String, soft: Bool = false) -> some View {
+        Text(text)
+            .font(soft ? Typo.pillSel : Typo.pill)
+            .foregroundStyle(soft ? C.primary : C.ink2)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(soft ? C.warm : C.card, in: Capsule(style: .continuous))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(soft ? Color.clear : C.line2, lineWidth: 1)
+            )
+            .contentShape(Capsule(style: .continuous))
     }
 }
