@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    分享扩展的 entitlements。
+    只需要一条：加入 App Group —— 收件箱放在那里。
+
+    **与通知扩展用的是同一个 App Group**（group.com.herinfo.app）。
+    两个扩展各开一个自己的组是不行的：那样主 App 就得同时开两个组、
+    并且在两处分别去读，而漏读一边的表现是「某一类东西静默丢失」。
+
+    主 App 那一份已经是这个组，所以这里不需要主 App 再动任何东西。
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.herinfo.app</string>
+	</array>
+</dict>
+</plist>

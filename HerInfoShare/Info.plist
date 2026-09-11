@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    分享扩展的 Info.plist
+
+    【与通知扩展的 Info.plist 长得很像，但两处关键值必须不一样】
+      · NSExtensionPointIdentifier —— 通知是 usernotifications.content-extension，
+        这里是 share-services。**写错的失败方式是「装了但分享面板里没有它」**，
+        不报错、不崩溃。
+      · NSExtensionAttributes —— 通知扩展那边是「只处理某个分类的通知」，
+        这边是「哪些内容会让本扩展出现在分享面板里」。
+
+    【NSExtensionActivationRule 是本文件里唯一需要想清楚的东西】
+    它决定的是「什么内容会让我们出现」，而不是「我们怎么读它」。
+    写宽了 → 在图片、文件、位置的分享面板里都冒出「存进她的信息本」，
+    而点进去什么也存不了；写窄了 → 该出现的时候不出现。
+    所以只声明两样：纯文本、网页地址。
+
+    **刻意不声明 NSExtensionActivationSupportsWebPageWithMaxCount** ——
+    Safari 分享网页时两样都会给（webPage 是 property-list 打包的），
+    只声明 WebURL 也能拿到 public.url；而一旦声明了 WebPage，
+    就可能遇到「只给了 webPage、没给 public.plain-text / public.url」的 provider，
+    那时扩展读不到内容，界面会是空的 —— 一个说不清的空面板比不出现更糟。
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>存进她的信息本</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+
+	<!--
+	    ⑤ 扩展的包类型必须是 XPC!（带感叹号）。
+	       少了这一条，系统不把这个 bundle 认成扩展，
+	       表现为「分享面板里根本不出现这一项」，连扩展进程都不会起来。
+	       在 Xcode 里手动建 target 时它是自动写上的，
+	       所以照抄 Info.plist 时最容易丢掉 —— 与通知扩展那一条同理。
+	-->
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.share-services</string>
+
+		<!-- 没有 storyboard，直接由类名实例化 -->
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
+
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<!--
+			    ⚠️ 这一层 `NSExtensionActivationRule` 不能省。
+			       那两条 ActivationSupports* 是它的**子键**，不是 NSExtensionAttributes
+			       的直接子键 —— 少了外层这个 dict，两条子键就成了没人读的孤儿：
+			       扩展照常装上，但在分享面板里永远不出现。不报错。
+			       （本工程就是这么先写错了一次，被 check-project.py 第 5 段抓出来的。）
+			-->
+			<key>NSExtensionActivationRule</key>
+			<dict>
+				<!--
+				    ① 纯文本。这一条才是主路：她的原话、一段备忘、一条语音转写，
+				       分享进来都是 public.plain-text。
+				-->
+				<key>NSExtensionActivationSupportsText</key>
+				<true/>
+
+				<!--
+				    ② 网页地址（最多 1 条）。
+				       收 URL 是因为「她发的那个链接」正是最该记下来的东西之一 ——
+				       而 URL 本身就是一段文本，存进正文即可，不需要额外处理。
+				-->
+				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+				<integer>1</integer>
+			</dict>
+		</dict>
+	</dict>
+</dict>
+</plist>

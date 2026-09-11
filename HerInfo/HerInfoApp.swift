@@ -108,16 +108,30 @@ struct HerInfoApp: App {
         drainInbox()
     }
 
-    /// 把两个快捷入口记下的打标落成真正的记录。
+    /// 把三个系统级入口记下的东西落成真正的数据。
+    ///
     /// **启动与每次回前台各一次** —— 用户完全可能在 App 从没打开过的情况下，
-    /// 只在锁屏（或快捷指令、长按菜单）上打了标，那些打标一直躺在队列里等这一步。
+    /// 只在锁屏上打了个标、或从别处分享了一段话进来，
+    /// 那些东西一直躺在队列里等这一步。
     @MainActor
     private func drainInbox() {
         let ctx = container.mainContext
-        // ① 通知扩展丢进共享收件箱的（跨进程，走 App Group）
+        // ① 通知扩展丢进共享收件箱的打标（跨进程，走 App Group）
         HerInfoStore.drainMoodInbox(into: ctx)
-        // ② 长按图标 / 快捷指令记下的（不跨进程，走普通 UserDefaults）
+        // ② 长按图标 / 快捷指令记下的打标（不跨进程，走普通 UserDefaults）
         HerInfoStore.drainQuickMood(into: ctx)
+        // ③ 分享扩展送进来的记录（跨进程，走 App Group）
+        //
+        // **落了东西才弹提示。** 这是分享这条路唯一需要主 App 配合的地方：
+        // 分享扩展存完就退场了，用户在 App 里看不到任何痕迹，
+        // 而「刚才存下来了没有」正是分享之后最想确认的一件事。
+        // 提示里的条数是**数出来的**，不是写死的。
+        let shared = HerInfoStore.drainShareInbox(into: ctx)
+        if shared > 0 {
+            ToastCenter.shared.show(shared == 1
+                                    ? "已存下分享的 1 条"
+                                    : "已存下分享的 \(shared) 条")
+        }
     }
 }
 

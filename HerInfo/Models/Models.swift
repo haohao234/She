@@ -548,6 +548,42 @@ enum HerInfoStore {
         try? ctx.save()
     }
 
+    // MARK: 分享扩展送进来的记录
+
+    /// 把分享扩展丢进收件箱的内容落成真正的 `Record`。
+    ///
+    /// 与 `drainMoodInbox` 是**同一条纪律**：先取走再落库，且只在这里写库 ——
+    /// 扩展是独立进程，两边同时开一个 SwiftData 库会有写冲突，
+    /// 而扩展被系统回收的时机完全不可控。
+    ///
+    /// 返回真正落下的条数，好让界面能说一句「已存下 N 条」——
+    /// **说真实条数**：分类 rawValue 万一认不出（`Cat` 与 `Category` 脱节，
+    /// 由 `check-swift.js` 防着），那一条会被跳过，提示里就不该把它算进去。
+    ///
+    /// **不做去重**：同一段话被分享两次，那就是用户分享了两次。
+    /// 替他合并会把「我刚才存的那条呢」变成一个说不清的问题 ——
+    /// 这与打标那条「宁可少一条也别多一条」不冲突：
+    /// 那里多一条是**伪造**（用户没打过的标），这里多一条是**照做**。
+    @MainActor
+    @discardableResult
+    static func drainShareInbox(into ctx: ModelContext) -> Int {
+        let items = HIShare.Inbox.drain()
+        guard !items.isEmpty else { return 0 }
+
+        var saved = 0
+        for item in items {
+            guard let cat = Category(rawValue: item.cat) else { continue }
+            ctx.insert(Record(cat: cat,
+                              title: item.title,
+                              body: item.body,
+                              createdAt: item.at,
+                              updatedAt: item.at))
+            saved += 1
+        }
+        if saved > 0 { try? ctx.save() }
+        return saved
+    }
+
     /// 长按菜单那几项的 type 前缀。
     ///
     /// **Info.plist 里的字符串必须与它一致，而两边对不上时系统不报任何错** ——

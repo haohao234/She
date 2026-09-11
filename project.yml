@@ -55,17 +55,25 @@ targets:
     sources:
       - path: HerInfo
         excludes:
-          # 这两个文件各自通过 build setting 引用（INFOPLIST_FILE /
+          # 这三个文件各自通过 build setting 引用（INFOPLIST_FILE /
           # CODE_SIGN_ENTITLEMENTS），不能再当资源打包进 bundle 里。
           - "Info.plist"
           - "HerInfo.entitlements"
-          # 契约不跟着文件夹走，它在下面单独列出 ——
-          # 因为它同时属于两个 target，见下一个 sources 条目。
+          # 两份契约不跟着文件夹走，它们在下面单独列出 ——
+          # 因为它们同时属于多个 target，见下面两个 sources 条目。
           - "Shared/NotificationContract.swift"
+          - "Shared/ShareContract.swift"
       # 契约：与下面的扩展 target 引用的是**同一个文件**。
       # 这是「跨进程共享」在工程层面的全部含义：
-      # 同一个源文件，出现在两个 target 的 Compile Sources 里。
+      # 同一个源文件，出现在多个 target 的 Compile Sources 里。
+      #
+      # 通知契约同时被三个 target 引用（主 App / 通知扩展 / 分享扩展）——
+      # 分享扩展引它不是为了那几个类型，是为了 `HINotify.appGroup`
+      # 与那 12 个色值（见 ShareContract.swift 文件头）。
       - path: HerInfo/Shared/NotificationContract.swift
+      # 分享契约：主 App 与分享扩展两个 target 共用。
+      # 主 App 侧要用它来 `drain` 收件箱（Models.swift 的 drainShareInbox）。
+      - path: HerInfo/Shared/ShareContract.swift
 
     settings:
       base:
@@ -82,6 +90,11 @@ targets:
       # embed + codeSign 是两件事：前者决定它在不在包里，
       # 后者决定它能不能在真机上被系统加载。
       - target: HerInfoNotification
+        embed: true
+        codeSign: true
+      # 分享扩展同理。**漏了这一条的表现**：分享面板里看不到
+      # 「存进她的信息本」—— 不报错，只是那一项不存在。
+      - target: HerInfoShare
         embed: true
         codeSign: true
 
@@ -120,6 +133,46 @@ targets:
       # 少了这一个依赖，编译期会报「cannot find type … in scope」）。
       # Swift 的自动链接通常能兜住，但显式写出来才不会在换构建方式时翻车。
       - sdk: UserNotificationsUI.framework
+
+  # ----------------------------------------------------------
+  #  分享扩展（画布 09 屏那四行系统级入口里的最后一行）
+  # ----------------------------------------------------------
+  #
+  #  「把她的原话分享进来，自动存成一条记录」。
+  #
+  #  **它是全项目唯一真正需要新 target 的一项。** 需要新 target 的只有两种东西：
+  #  被系统在**别的进程**里加载的代码（扩展）、以及被系统在别的进程里读的声明
+  #  （plist / entitlements）。而像「快捷指令」那种（AppIntent）——
+  #  从 iOS 16 起写在主 App 里就够了，那是本项目早先判断错的一条，见 README。
+  HerInfoShare:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+
+    sources:
+      - path: HerInfoShare
+        excludes:
+          - "Info.plist"
+          - "HerInfoShare.entitlements"
+      # 分享扩展引**两份**契约，两个理由各不相同：
+      #   · NotificationContract.swift —— 只要那个 App Group 名字与 12 个色值，
+      #     不要它那些类型（把共享容器写成两遍，表现就是「分享进来的东西静默丢失」）
+      #   · ShareContract.swift      —— 收件箱协议本体
+      - path: HerInfo/Shared/NotificationContract.swift
+      - path: HerInfo/Shared/ShareContract.swift
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.herinfo.app.share
+        INFOPLIST_FILE: HerInfoShare/Info.plist
+        CODE_SIGN_ENTITLEMENTS: HerInfoShare/HerInfoShare.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES      # 扩展不单独产出安装包，它只跟着主 App 走
+
+    dependencies:
+      # UTType（public.plain-text / public.url）定义在这里。
+      # 与 UserNotificationsUI 那条同理：显式声明，换构建方式时不翻车。
+      - sdk: UniformTypeIdentifiers.framework
 
 schemes:
   HerInfo:

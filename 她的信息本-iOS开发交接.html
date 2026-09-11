@@ -309,16 +309,17 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:26px 0;
     <button class="copybtn" data-copy="tree">复制</button>
   </div>
 <pre id="tree"><code>她的信息本-iOS/                    <span class="cm">// 仓库根目录</span>
-├─ project.yml                    <span class="cm">// 工程声明的唯一真相：两个 target / 共享契约 / App Groups 全在这里</span>
+├─ project.yml                    <span class="cm">// 工程声明的唯一真相：三个 target / 两份契约 / App Groups 全在这里</span>
 ├─ .github/workflows/
 │   └─ ios-build.yml              <span class="cm">// 云端编译 —— 没有 Mac 也能让真正的编译器说话</span>
 │
 ├─ HerInfo/                       <span class="cm">// 主 App target</span>
-│   ├─ HerInfoApp.swift           <span class="cm">// 入口：建容器、写种子、重排提醒、回前台取打标收件箱</span>
-│   ├─ Info.plist                 <span class="cm">// 四条「少了不报错」的键：定位/FaceID 用途说明、文件可见、就地打开</span>
-│   ├─ HerInfo.entitlements       <span class="cm">// 只需要一条：App Group（打标收件箱）</span>
+│   ├─ HerInfoApp.swift           <span class="cm">// 入口：建容器、写种子、重排提醒、回前台取两个收件箱、接长按菜单</span>
+│   ├─ Info.plist                 <span class="cm">// 四条「少了不报错」的键 + 长按菜单三项（UIApplicationShortcutItems）</span>
+│   ├─ HerInfo.entitlements       <span class="cm">// 只需要一条：App Group（两个扩展共用的收件箱）</span>
 │   ├─ Shared/
-│   │   └─ NotificationContract.swift <span class="cm">// 唯一契约：两个 target 的 Compile Sources 都有它</span>
+│   │   ├─ NotificationContract.swift <span class="cm">// 通知契约：三个 target 的 Compile Sources 都有它</span>
+│   │   └─ ShareContract.swift        <span class="cm">// 分享契约：它引用上面的 App Group，不重写那个字符串</span>
 │   ├─ DesignSystem/
 │   │   ├─ Tokens.swift           <span class="cm">// 16 个令牌 × 浅深两档 + 字体 + 圆角 + 间距 + 投影</span>
 │   │   └─ Components.swift       <span class="cm">// 14 个组件：SCard / Pill / SoftSwitch / SegmentControl …</span>
@@ -327,21 +328,29 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:26px 0;
 │   ├─ Features/
 │   │   ├─ HomeView.swift         <span class="cm">// RootView（4 tab 容器）+ 01 首页 + 04 搜索 + 05 提醒</span>
 │   │   ├─ BrowseView.swift       <span class="cm">// 02 分类浏览 + 25 排序置顶 + 31 记录详情</span>
-│   │   ├─ EditorView.swift       <span class="cm">// 03 新增记录 + 34 记录配图（同一个编辑器的两种态）</span>
+│   │   ├─ EditorView.swift       <span class="cm">// 03 新增记录 + 34 记录配图 + 08 键盘工具栏</span>
 │   │   ├─ ReminderEditorView.swift <span class="cm">// 32 新建提醒</span>
 │   │   ├─ ProfileEditView.swift  <span class="cm">// 33 编辑她的档案</span>
 │   │   ├─ ExportView.swift       <span class="cm">// 35 导出档案</span>
+│   │   ├─ MoodView.swift         <span class="cm">// 09 情绪打标 × 三档 / 10 打标后的即时建议面板</span>
+│   │   ├─ MoodIntent.swift       <span class="cm">// 09 的快捷指令入口（AppIntent 就在主 App 里，不用新 target）</span>
 │   │   └─ SecondaryViews.swift   <span class="cm">// 17 / 12 / 23 / 13 / 27</span>
 │   └─ Services/
 │       ├─ ReminderService.swift  <span class="cm">// 本地通知 + 地理围栏（含 20 个区域上限）</span>
 │       └─ ExportService.swift    <span class="cm">// PDF / Markdown / JSON 三种真导出</span>
 │
-└─ HerInfoNotification/           <span class="cm">// 通知内容扩展：独立 target、独立进程、独立 Info.plist</span>
-    ├─ NotificationViewController.swift <span class="cm">// 入口：取通知、读系统搬来的附件、把点击转发给主 App</span>
-    ├─ NotificationContentView.swift    <span class="cm">// 36 屏展开态那三块：配图 / 元信息 / 五个等宽打标胶囊</span>
-    ├─ NotificationStyle.swift          <span class="cm">// 白阶透明度那一套；零 hex，色值全取自共享契约</span>
-    ├─ Info.plist                       <span class="cm">// 六个键逐个都要对（含 CFBundlePackageType = XPC!）</span>
-    └─ HerInfoNotification.entitlements <span class="cm">// 只需要一条：和主 App 同一个 App Group</span></code></pre>
+├─ HerInfoNotification/           <span class="cm">// 通知内容扩展：独立 target、独立进程、独立 Info.plist</span>
+│   ├─ NotificationViewController.swift <span class="cm">// 入口：取通知、读系统搬来的附件、把点击转发给主 App</span>
+│   ├─ NotificationContentView.swift    <span class="cm">// 36 屏展开态那三块：配图 / 元信息 / 五个等宽打标胶囊</span>
+│   ├─ NotificationStyle.swift          <span class="cm">// 白阶透明度那一套；零 hex，色值全取自共享契约</span>
+│   ├─ Info.plist                       <span class="cm">// 六个键逐个都要对（含 CFBundlePackageType = XPC!）</span>
+│   └─ HerInfoNotification.entitlements <span class="cm">// 只需要一条：和主 App 同一个 App Group</span>
+│
+└─ HerInfoShare/                  <span class="cm">// 分享扩展：全项目唯一真正需要新 target 的一项</span>
+    ├─ ShareViewController.swift  <span class="cm">// 入口：取分享内容 → 丢收件箱 → 关闭自己（它不写库）</span>
+    ├─ ShareComposeView.swift     <span class="cm">// 面板：原文预览 + 四个分类胶囊 + 「存下这条」（文案随状态变）</span>
+    ├─ Info.plist                 <span class="cm">// 四个键：share-services / XPC! / ActivationRule / PrincipalClass</span>
+    └─ HerInfoShare.entitlements  <span class="cm">// 和上面那个**同一个** App Group（写成两个组 = 各自读不到）</span></code></pre>
 
   <div class="callout warn" style="margin-top:14px">
     <b>为什么工程结构是一个 YAML 而不是 <span class="mono-s">.xcodeproj</span>：</b>
@@ -1263,21 +1272,56 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
       </ul>
     </div>
     <div class="card pad">
-      <h4>需要额外工作的（1 项）</h4>
+      <h4>需要额外工作的 · 没有剩余</h4>
       <ul class="tight">
-        <li><b>09 / 10 两屏已经写好</b>（<span class="mono-s">MoodView.swift</span>），
-            连四行系统级入口里的三行也通了。真正还剩的是最后一行：
+        <li><b>分享扩展这一轮补完了</b>（<span class="mono-s">HerInfoShare/</span>，
+            两个文件）。09 屏那一行原文是「把她的原话分享进来，自动存成一条记录」，
+            它是全项目<b>唯一真正需要新 target</b> 的一项 ——
+            <span class="mono-s">app-extension</span> + 自己的 Info.plist 与
+            <span class="mono-s">NSExtension</span> 键 + App Group。
           <ul class="tight" style="margin-top:8px">
-            <li><b>分享扩展</b>：把别处的文字分享进来，存成一条记录。
-                这一个<b>确实要新 target</b> —— <span class="mono-s">app-extension</span>
-                + 自己的 Info.plist 与 <span class="mono-s">NSExtension</span> 键 + App Group。
-                注意它存的是<b>记录</b>不是<b>打标</b>，
-                所以它和通知扩展<b>不该共用一个契约文件</b>。</li>
+            <li><b>分类由用户点，不由我们猜。</b>
+                <span class="mono-s">Record.cat</span> 是必填的四值枚举、没有「未分类」，
+                而「她这条算喜好还是在意的事」本身就是一次判断 ——
+                猜错了留下的是<b>一条错数据</b>，比少一条糟得多。
+                所以面板上四个胶囊、必须点一个才能存</li>
+            <li><b>扩展不写库。</b> 它只把内容丢进 App Group 里的收件箱
+                （<span class="mono-s">HIShare.Inbox</span>），落成
+                <span class="mono-s">Record</span> 是主 App 在
+                <span class="mono-s">drainInbox</span> 里做的事 ——
+                与打标收件箱同一个模式。两个进程同时开一个 SwiftData 库会有写冲突，
+                而扩展被系统回收的时机完全不可控</li>
+            <li><b>它和通知扩展不共用契约的「内容」，但必须共用 App Group 的名字。</b>
+                分享相关的类型一个都不进
+                <span class="mono-s">NotificationContract.swift</span>（那会把它变成
+                三个 target 的杂烩），可共享容器那个字符串只能写一处 ——
+                写成两遍的表现是「分享进来的东西静默丢失」，
+                不报错、不崩溃、日志里什么也没有</li>
+            <li><b>「自动」体现在不用手抄，不体现在替用户做判断</b>：正文自动填、
+                标题自动取首行（超 20 字截断），正文<b>一个字都不删</b>。
+                面板用系统语义字体（<span class="mono-s">.headline</span> /
+                <span class="mono-s">.footnote</span>）而不是照抄 App 的固定字号 ——
+                它是系统级面板，用户把系统字体调大时就该跟着变大；
+                而主色与四个分类色仍取自共享契约，<b>一行 hex 都不写</b></li>
           </ul>
         </li>
       </ul>
       <div class="callout info" style="margin-top:12px">
-        <b>另外两行这一轮通了，而且都不用新 target：</b>
+        <b>分享扩展有两处「不报错、只是白做」的键 —— 本工程第一次就写错了一个：</b>
+        <ul class="tight" style="margin-top:8px">
+          <li><span class="mono-s">NSExtensionPointIdentifier</span> 必须是
+              <span class="mono-s">com.apple.share-services</span>。
+              写成通知那个值，表现为「装得上、但分享面板里根本没有它」</li>
+          <li><span class="mono-s">NSExtensionActivationRule</span> 是
+              <span class="mono-s">NSExtensionAttributes</span> 里的<b>一个 dict</b>，
+              那两条 <span class="mono-s">NSExtensionActivationSupports*</span>
+              是它的<b>子键</b>。少了外层那一层，两条子键就成了没人读的孤儿 ——
+              <b>本工程第一次正是这么写的</b>，被
+              <span class="mono-s">check-project.py</span> 第 5 段当场抓出来</li>
+        </ul>
+      </div>
+      <div class="callout info" style="margin-top:12px">
+        <b>另外三行都不用新 target：</b>
         <ul class="tight" style="margin-top:8px">
           <li><b>长按 App 图标</b>：<span class="mono-s">Info.plist</span> 里的
               <span class="mono-s">UIApplicationShortcutItems</span> + 一个
@@ -1300,7 +1344,13 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
         「要新建 <b>App Intent</b> 与 <b>Share Extension</b> 两个独立 target」——
         这句话的一半是错的：<b>AppIntent 不需要新 target</b>，
         iOS 16 起它就能写在主 App 里，<span class="mono-s">import AppIntents</span> 之后
-        会照样出现在快捷指令中。真正需要新 target 的只有分享扩展一个。
+        会照样出现在快捷指令中。真正需要新 target 的只有分享扩展一个，
+        而它这一轮也补上了。
+        <br><br>
+        <b>一条能省掉这类误判的尺子：</b>只有两种东西需要新 target ——
+        <b>被系统在别的进程里加载的代码</b>（扩展），以及
+        <b>被系统在别的进程里读的声明</b>（plist / entitlements）。
+        拿它去量「快捷指令」，当场就出局了：它跑在我们自己的进程里。
         「哪个能力需要哪种 target」这类判断，光凭印象很容易多说一倍工作量。
       </div>
       <div class="callout info" style="margin-top:12px">
@@ -1342,6 +1392,7 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
       <tr><td>12</td><td>字号放大</td><td>辅助功能里放大字号，文字不裁切、卡片不重叠</td></tr>
       <tr><td>13</td><td>通知长按展开</td><td>展开后能看到配图 + 分类点 + 「第 N 版」+ 五个胶囊；<b>收起态仍是系统原生样子</b>，没有多余留白或半截胶囊</td></tr>
       <tr><td>14</td><td>锁屏打标</td><td>点一个胶囊 → 变成「已记下」；这次打标进共享收件箱，<b>下次打开 App 时写进她的档案</b>（来源 = 锁屏）· 期间 App 从未被启动</td></tr>
+      <tr><td>15</td><td>分享进来</td><td>从备忘录分享三行文字 → 面板里选一个分类 → 「存下这条」；回到 App 顶部滑下「已存下分享的 1 条」，02 列表里<b>标题是第一行</b>、正文是整段。<b>先杀掉 App 再分享，记录依然落得下来</b>（扩展只丢收件箱，落库归主 App）</td></tr>
     </tbody>
   </table>
 

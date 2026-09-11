@@ -131,10 +131,12 @@ open HerInfo.xcodeproj
 
 | 文件 | 状态 | 对应画布 |
 |---|---|---|
-| `project.yml` | 完成 | **工程声明的唯一真相**：两个 target、共享契约、App Groups、Info.plist 全部固化在这里 |
-| `HerInfo/Info.plist` | 完成 | 四条「少了不报错」的键（定位/FaceID 用途说明、文件可见、就地打开） |
+| `project.yml` | 完成 | **工程声明的唯一真相**：三个 target、两份共享契约、App Groups、Info.plist 全部固化在这里 |
+| `HerInfo/Info.plist` | 完成 | 四条「少了不报错」的键（定位/FaceID 用途说明、文件可见、就地打开）+ 长按菜单三项 |
 | `HerInfoNotification/Info.plist` | 完成 | 扩展六个 NSExtension 键，含 `CFBundlePackageType = XPC!` |
-| `Shared/NotificationContract.swift` | 完成 | 主 App ↔ 通知扩展的唯一契约（两个 target 共用） |
+| `HerInfoShare/Info.plist` | 完成 | 分享扩展四个键，含 `NSExtensionActivationRule` 与 `com.apple.share-services` |
+| `Shared/NotificationContract.swift` | 完成 | 主 App ↔ 通知扩展的唯一契约（**三个 target 共用**，见下） |
+| `Shared/ShareContract.swift` | 完成 | 主 App ↔ 分享扩展的唯一契约（引用上面的 App Group，不重写字符串） |
 | `DesignSystem/Tokens.swift` | 完成 | 规范页「设计令牌」16 项 × 浅深两档 |
 | `DesignSystem/Components.swift` | 完成 | 规范页「组件库」14 个组件 |
 | `Models/Models.swift` | 完成 | 规范页「数据模型」6 张表 |
@@ -149,6 +151,7 @@ open HerInfo.xcodeproj
 | `Features/VersionHistoryView.swift` | 完成 | **07** 历史版本 · 左右对比（行级差异 + 恢复 = 落一个新版本） |
 | `Features/SearchFilterView.swift` | 完成 | **30** 搜索筛选面板（三组条件 + 即时条数）+ **04** 结果统计行 |
 | `Features/MoodView.swift` | 完成 | **09** 情绪打标（三档 + 最近一次 + 四行系统级入口）/ **10** 打标后的即时建议面板 |
+| `Features/MoodIntent.swift` | 完成 | **09** 的快捷指令入口（`AppIntent` 就写在主 App 里，不用新 target） |
 | `Features/SecondaryViews.swift` | 完成 | 17 / 12 / 23 / 13；**27 回收站**（还剩 N 天、恢复说明、全部恢复） |
 | `Services/PhotoStore.swift` | 完成 | 配图落盘层：内容寻址（SHA-256 前 8 字节）+ JPEG 压缩副本 + 降采样读 + 孤儿清理 |
 | `Services/ReminderService.swift` | 完成 | 通知 + 地理围栏，含 20 个区域上限处理 |
@@ -156,15 +159,19 @@ open HerInfo.xcodeproj
 | `HerInfoNotification/NotificationViewController.swift` | 完成 | **36** 展开态入口：取通知、读附件、转发点击 |
 | `HerInfoNotification/NotificationContentView.swift` | 完成 | **36** 展开态那三块：配图 / 元信息 / 五个胶囊 |
 | `HerInfoNotification/NotificationStyle.swift` | 完成 | 通知专用白阶透明度；零 hex，色值取自契约 |
+| `HerInfoShare/ShareViewController.swift` | 完成 | **09** 系统级入口第四行：取分享内容 → 丢收件箱 → 关闭（自己不写库） |
+| `HerInfoShare/ShareComposeView.swift` | 完成 | 分享面板：原文预览 + 四个分类胶囊 + 「存下这条」（按钮文案随状态变） |
 
 **覆盖了主流程 01→02→03→04→05、首次使用 15→16、首条记录引导 06→21、历史版本 31→07、
-搜索与筛选 04→30、情绪打标 09→10，
+搜索与筛选 04→30、情绪打标 09→10、分享一段文字 → 一条记录，
 以及 22 轻提示 / 26 删除二次确认 / 27 回收站这三屏的交互壳，
 36 屏整套通知内容扩展（独立 target + 共享契约），
+09 屏那四行系统级入口**全部**（锁屏 / 快捷指令 / 长按图标 / 分享扩展），
 加上设置链 12→35 / 12→27 / 12→13→23。**
 
-一共 23 个 Swift 源文件（主 App 19 + 扩展 3 + 两者共用的契约 1），
-外加 2 份 `Info.plist`、1 份 `project.yml`、1 条 CI 流水线。
+一共 **27 个 Swift 源文件**（主 App 22 + 通知扩展 3 + 分享扩展 2），
+外加 3 份 `Info.plist`、1 份 `project.yml`、1 条 CI 流水线。
+两份契约文件被多个 target 同时编译 —— 那就是「跨进程共享」在工程层面的全部含义。
 
 > **新建一个记录不会再变成好几条。** 在补 21 屏时发现的：编辑器的 `@Query`
 > 谓词在 `init` 里就定死成哨兵 id `"\u{0}__new__"`（为了绕开 `#Predicate`
@@ -187,17 +194,23 @@ open HerInfo.xcodeproj
 
 ## 三、还需要铺开的
 
-盘一遍库存之后，**09 / 10 两屏本身也落地了**（`MoodView.swift`）。
-真正还剩的，只是 09 屏下半部分那四行**系统级入口**里的三行 ——
-它们是 iOS 的平台能力，不是加个 View 的事：
+**09 屏那四行系统级入口现在全部通了，工程里再没有「必须新建 target 才能做」的东西：**
 
-| 还剩 | 性质 |
-|---|---|
-| **分享扩展** | 四行入口里剩下的这最后一行，**确实要新 target** ——<br>`app-extension` + 自己的 Info.plist 与 `NSExtension` 键 + App Group |
+| 入口 | 落地方式 | 要新 target |
+|---|---|---|
+| 在通知上直接换档位 | 36 屏那套通知内容扩展（`HerInfoNotification` + 单向收件箱 + `drainMoodInbox`） | 要（早已完成） |
+| 长按 App 图标 | `Info.plist` 的 `UIApplicationShortcutItems` 三项 + `QuickActionDelegate` 接住 | **不要** |
+| 快捷指令 | `AppIntent` 写在主 App 里（`Features/MoodIntent.swift`） | **不要** |
+| 把她的原话分享进来 | `HerInfoShare` 分享扩展 + 收件箱 | 要（这一轮补的） |
 
-**另外两行这一轮通了：**
+> **只有两种东西需要新 target**：被系统在**别的进程**里加载的代码（扩展），
+> 以及被系统在别的进程里读的声明（plist / entitlements）。
+> 拿这条尺子量，「快捷指令」当场出局 —— 它跑在我们自己的进程里。
+> 早先那条错判（把「情绪打标」写成要新建 **两个** target：App Intent + Share Extension）
+> 就是把「系统级入口」和「需要新 target」当成了同一件事。
+> 真正要新 target 的自始至终只有分享扩展一个，而它这一轮补上了。
 
-- **长按 App 图标** —— `Info.plist` 里的 `UIApplicationShortcutItems`（三项，对应 09 屏那三个按钮）
+**长按 App 图标** —— `Info.plist` 里的 `UIApplicationShortcutItems`（三项，对应 09 屏那三个按钮）
   \+ `QuickActionDelegate` 接住。**不用新 target。**
   两处会悄悄失效的地方：`type` 的 `hi.mood.` 前缀必须与 `HerInfoStore.quickActionPrefix` 一致，
   图标名必须与契约里的 `HINotify.Mood.symbol` 一致 —— 对不上时系统**照样显示菜单、
@@ -214,21 +227,41 @@ open HerInfo.xcodeproj
   桥接用的 `MoodLevelOption` 只桥**三档** —— 与 09 屏那三个按钮一致；
   也刻意**不把 `MoodLevel` 本身改成 `AppEnum`**，那会让数据模型去依赖 AppIntents。
 
-**四行里「在通知上直接换档位」早就是好的** —— 那是 36 屏那套通知内容扩展
-（`HerInfoNotification` target + `HINotify.Inbox` 单向收件箱 + `drainMoodInbox`）。
+**分享扩展**（`HerInfoShare/`，两个文件 355 行）—— 09 屏那一行原文是
+「把她的原话分享进来，自动存成一条记录」。四个判断值得说明：
 
-> **三个入口（锁屏 / 快捷指令 / 长按图标）走的是同一个模式**：入口只负责把意图记下来
-> （`HerInfoStore.notePendingMood`），落库统一交给 `drainInbox`。
-> 好处不只是省事 —— 三处不会各写一套写库逻辑，`MoodSource` 也就不会有人在某一路上记错。
+1. **分类由用户点，不由我们猜。** `Record.cat` 是必填的四值枚举，没有「未分类」；
+   而「她这条算喜好还是在意的事」本身就是一次判断，猜错了留下的是**一条错数据**。
+   所以面板上四个胶囊、必须点一个才能存 —— 与「打标是用户给的信号」是同一条纪律。
+   面板上还有一句「存下来之后，分类和文字都还能改」，因为**现在不必想清楚**。
+2. **扩展不写库。** 它只把内容丢进 App Group 里的收件箱（`HIShare.Inbox`），
+   落成 `Record` 是主 App 在 `drainInbox` 里做的事 —— 与打标收件箱同一个模式。
+   两个进程同时开一个 SwiftData 库会有写冲突，而扩展被系统回收的时机完全不可控。
+3. **「自动」体现在不用手抄，不体现在替用户做判断。** 正文自动填、标题自动取首行
+   （超 20 字截断 —— 这是记录卡标题在 375 宽里放得下的宽度）。
+   正文**一个字都不删**：面板上那行「原文 · N 字」就是在说这件事。
+4. **面板用系统语义字体**（`.headline` / `.footnote`）而不是照抄 App 的固定字号 ——
+   它是系统级面板，用户把系统字体调大时就该跟着变大。而主色与四个分类色
+   仍取自共享契约，**一行 hex 都不写**（`check-swift.js` 会拦）。
+
+> 这一块有两个「不报错、只是白做」的点，都写进交接文档与校验脚本了：
+> ① `NSExtensionPointIdentifier` 必须是 `com.apple.share-services`
+> （写成通知那个值 = 装得上、但分享面板里没有它）；
+> ② `NSExtensionActivationRule` 是 `NSExtensionAttributes` 里的**一个 dict**，
+> 那两条 `NSExtensionActivationSupports*` 是它的子键 —— **本工程第一次就是这么写错的**
+> （少了外层那一层），被 `check-project.py` 第 5 段当场抓出来。
+>
+> 主 App 侧只在**真的落了东西**时提示一句「已存下分享的 N 条」（条数是数出来的，
+> 不是写死的）。分享扩展存完就退场，用户在 App 里看不到任何痕迹 ——
+> 而「刚才存下来了没有」正是分享之后最想确认的一件事。
+
+> **四个入口（锁屏 / 快捷指令 / 长按图标 / 分享）走的是同一个模式**：入口只负责把东西
+> 记下来（打标走 `notePendingMood`、分享走 `HIShare.Inbox.push`），
+> 落库统一交给主 App 的 `drainInbox`。
+> 好处不只是省事 —— 四处不会各写一套写库逻辑，`MoodSource` 也就不会有人在某一路上记错。
 > 这也是为什么 `MoodSource` 里 `.shortcut` 与 `.quickAction` 是**两个值**：
 > 它们看起来都是「系统级入口」，但一个是喊出来的、一个是按出来的，
 > 出问题时排查方向完全不同，合成一个就再也分不清了。
-
-> **顺手修正一条早先下的判断。** 交接文档里原先写的是「09 / 10 情绪打标要新建**两个** target
-> （App Intent + Share Extension）」，这句话的一半是错的：**`AppIntent` 不需要新 target** ——
-> iOS 16 起它可以就写在主 App 里，`import AppIntents` 之后会照样出现在快捷指令里。
-> 真正需要新 target 的只有分享扩展一个。
-> （这也说明「哪个能力需要哪种 target」这类判断，光凭印象很容易多说一倍工作量。）
 
 **08 键盘工具栏 / 30 搜索筛选面板 / 07 历史版本对比** 这一轮做掉了。
 
