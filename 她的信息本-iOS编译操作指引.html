@@ -692,6 +692,11 @@ warning 总数：11</pre>
           「万一失败」里那条 <span class="mono">app extension placeholder</span>。
           <br>→ 文件名里的提交号要跟<b>最新那次 run</b> 对得上，所以一定点<b>页面最上面（最新）</b>那次运行，
           别用浏览器里留着的旧下载。
+          <br>→ <b>拖之前先看一眼 Sideloadly 第一行日志</b>：它会原样打印出你拖的是哪个文件
+          （<span class="mono">Using IPA file: …</span>）。这一行是「我到底装的是哪个包」的唯一确证 ——
+          <b>桌面/下载夹里同时躺着新旧两个包是常态</b>，看着文件名都差不多，拖错一次就白等十分钟。
+          <br>→ 认准了旧包就<b>直接把它删掉</b>（不是留着「说不定有用」）—— 它永远装不上，
+          留着只会再被拖一次。
         </div>
       </div>
       <div class="note warn">
@@ -790,6 +795,14 @@ warning 总数：11</pre>
           <code>HerInfoShare.appex</code> 上，而不是主 App。三个 bundle 都带病，先被拦下的是扩展。
           <br>→ <b>换个包就好，不用改任何设置、也不用重装 iTunes。</b>
           怎么认包：见上面第 3 步那张「先认包」—— 约 <b>2 MB</b> 的是旧的，<b>1 MB 出头</b>的是现在这个。
+          <br>→ <b>怎么确证自己拖错了</b>：看 Sideloadly 第一行
+          <span class="mono">Using IPA file: …\HerInfo-<b>4794fed</b>-unsigned.ipa</span> ——
+          <code>4794fed</code> 这个提交号就是修复前的那一版，和它一起出现的一定是本条报错。
+          （<code>6ab3ec5</code> 及以后的都已经是修好的包。）
+          <br>→ 日志最末那句
+          <span class="mono">Install failed: Guru Meditation … __init__() missing 1 required
+          positional argument: 'orig'</span> 是 <b>Sideloadly 自己在处理这个失败时又崩了一下</b>，
+          不是第二个独立故障 —— 它的上面一行才是真原因，别被这句带偏。
         </div>
       </div>
 
