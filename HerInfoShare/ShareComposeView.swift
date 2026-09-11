@@ -22,10 +22,16 @@ import UIKit
 
 struct ShareComposeView: View {
 
-    /// 已经过 `HIShare.Compose.normalize` 之前的原文。
-    let text: String
     let onSave: (HIShare.Cat) -> Void
     let onCancel: () -> Void
+
+    /// 整理过的正文（去首尾空行、连续空行压成一个）。
+    ///
+    /// **在 init 里算一次、存起来。** 它要被读三次（预览、字数、空判断），
+    /// 做成计算属性的话每帧都要把整段文字重新切一遍行 ——
+    /// 而分享进来的可能是一整篇文章。
+    /// （原文本身不存：除了这一处整理，没有第二个地方需要它。）
+    private let normalized: String
 
     /// 用户点了哪一类。**nil 就是还没点** —— 不给默认值，
     /// 因为「替用户先选一个」等于伪造他的判断。
@@ -38,14 +44,13 @@ struct ShareComposeView: View {
     init(text: String,
          onSave: @escaping (HIShare.Cat) -> Void,
          onCancel: @escaping () -> Void) {
-        self.text = text
+        self.normalized = HIShare.Compose.normalize(text)
         self.onSave = onSave
         self.onCancel = onCancel
     }
 
-    private var body_: String { HIShare.Compose.normalize(text) }
-    private var isEmptyShare: Bool { body_.isEmpty }
-    private var canSave: Bool { picked != nil && !isEmptyShare }
+    private var hasNothing: Bool { normalized.isEmpty }
+    private var canSave: Bool { picked != nil && !hasNothing }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,8 +58,8 @@ struct ShareComposeView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if isEmptyShare { emptyHint } else { previewCard }
-                    if !isEmptyShare { categoryPicker }
+                    if hasNothing { emptyHint } else { previewCard }
+                    if !hasNothing { categoryPicker }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 2)
@@ -94,7 +99,7 @@ struct ShareComposeView: View {
     /// 历史版本一起在）。所以这里只让用户确认「读到的是不是这段」。
     private var previewCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(body_)
+            Text(normalized)
                 .font(.subheadline)
                 .foregroundStyle(Color(uiColor: .label))
                 .lineSpacing(4)
@@ -106,7 +111,7 @@ struct ShareComposeView: View {
             HStack(spacing: 5) {
                 Text("原文")
                 Text("·")
-                Text("\(body_.count) 字")
+                Text("\(normalized.count) 字")
             }
             .font(.caption)
             .foregroundStyle(Color(uiColor: .tertiaryLabel))
@@ -215,7 +220,7 @@ struct ShareComposeView: View {
     }
 
     private var buttonTitle: String {
-        if isEmptyShare { return "没有读到文字" }
+        if hasNothing { return "没有读到文字" }
         return picked == nil ? "先选一个分类" : "存下这条"
     }
 
