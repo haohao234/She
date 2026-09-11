@@ -20,23 +20,29 @@
 代码推上 GitHub 就自动编译，报错直接回在 Actions 的日志里。
 `.github/workflows/ios-build.yml` 已经写好，push 就触发。
 
-**当前状态：这条路已经走通了。** 代码在 `main` 上，云端编译已跑过三轮：
+**当前状态：这条路线已经跑通了。** 代码在 `main` 上，云端 macOS 编译
+**成功、0 error、0 warning**，产出了 `HerInfo.app`（含内嵌的通知扩展）。
 
 | 轮次 | 结果 | 说明 |
 | --- | --- | --- |
 | 第 1 轮 | 2 个错 | 通知扩展缺 `import UserNotificationsUI`（`UNNotificationContentExtension` 属于 UserNotificationsUI，不属于 UserNotifications） |
 | 第 2 轮 | 1 个错 | `dismissNotification()` 这个名字不存在，正确是 `dismissNotificationContentExtension()` |
-| 第 3 轮 | 见 Actions | 修完上面两处后重跑 |
+| 第 3 轮 | 1 个错 | 扩展通过后进到主 App：`BrowseView.swift:297` 的 `Pill(...)` 参数顺序不对（`tiny` 必须在 `tint` 后面） |
+| **第 4 轮** | **成功** | `** BUILD SUCCEEDED **` · error 0 · warning 0 · 产出 `HerInfo.app` |
 
-**主 App 那 5500 行是一次通过的，0 warning。** 三类事先担心的
+**主 App 那 5500 行是一次通过的。** 三类事先担心的
 「只有编译器能裁决」的问题（`#Predicate` 捕获 / Swift 6 并发 / 自定义 `Layout`）
 一个都没报出来 —— 它们只是被 `SWIFT_VERSION 5.0` 和非严格并发按住了，
-不是不存在。详见 `编译预检清单.md` 第 3.4 节。
+不是不存在。详见 `编译预检清单.md` 第 3.4 节（含三个错误各自的根因与那一条可复用的教训）。
 
 以后再推代码，只剩两步：
 
 1. **双击本目录下的 `push-to-github.bat`**，连按两次回车 —— 剩下的它自己做
-2. 等 3–5 分钟，看 Actions → 「错误（error）」那一段
+2. 等 1–5 分钟，看 Actions 是绿的还是红的
+
+> **失败时不用你翻日志。** 把「失败了」告诉我，我这边能直接取到完整构建日志
+> 并摘出 error 行（公开仓库的日志接口要权限，本机已存的 GitHub 凭据够用）。
+> 你也可以自己看：Actions → 那一次运行 → 点开「摘出错误与警告」那一步。
 
 > **本地仓库已就绪**（分支 `main`，远程地址已配好）。
 > 逐步操作、每一步的验证点与坑，看 **`她的信息本-iOS编译操作指引.html`**。
