@@ -20,22 +20,43 @@
 代码推上 GitHub 就自动编译，报错直接回在 Actions 的日志里。
 `.github/workflows/ios-build.yml` 已经写好，push 就触发。
 
-1. 仓库已经建好了：**`https://github.com/haohao234/She`**
-   （公开，且带了一个自动生成的 README —— 脚本会处理掉它）
-2. **双击本目录下的 `push-to-github.bat`**，按回车 —— 剩下的它自己做
-3. 等 3–5 分钟，看 Actions → 「错误（error）」那一段
-4. 把那段贴回来，我按行改
+**当前状态：这条路已经走通了。** 代码在 `main` 上，云端编译已跑过三轮：
 
-> **本地仓库已经建好**（分支 `main`，3 个提交，工作区干净），远程地址也配好了，
-> 所以全程只需要「双击 + 回车」。
+| 轮次 | 结果 | 说明 |
+| --- | --- | --- |
+| 第 1 轮 | 2 个错 | 通知扩展缺 `import UserNotificationsUI`（`UNNotificationContentExtension` 属于 UserNotificationsUI，不属于 UserNotifications） |
+| 第 2 轮 | 1 个错 | `dismissNotification()` 这个名字不存在，正确是 `dismissNotificationContentExtension()` |
+| 第 3 轮 | 见 Actions | 修完上面两处后重跑 |
+
+**主 App 那 5500 行是一次通过的，0 warning。** 三类事先担心的
+「只有编译器能裁决」的问题（`#Predicate` 捕获 / Swift 6 并发 / 自定义 `Layout`）
+一个都没报出来 —— 它们只是被 `SWIFT_VERSION 5.0` 和非严格并发按住了，
+不是不存在。详见 `编译预检清单.md` 第 3.4 节。
+
+以后再推代码，只剩两步：
+
+1. **双击本目录下的 `push-to-github.bat`**，连按两次回车 —— 剩下的它自己做
+2. 等 3–5 分钟，看 Actions → 「错误（error）」那一段
+
+> **本地仓库已就绪**（分支 `main`，远程地址已配好）。
 > 逐步操作、每一步的验证点与坑，看 **`她的信息本-iOS编译操作指引.html`**。
 
-> **第一次推送为什么失败（已修）** —— 两个原因叠在一起，旧脚本只报一句「推送失败」：
-> 配的地址是 `…/For-She.git`（GitHub 上不存在 → `Repository not found`），
-> 而真实仓库 `She` 有个自动生成的 `Initial commit`（地址对也会被 `rejected` 挡回来）。
-> 新版脚本改成**先诊断、再推送**：单独测一次地址、把 git 原始报错原样打出来、
-> 按「找不到仓库 / 登录被拒 / 网络不通」分类给办法、推送前先问要不要覆盖远程。
-> 每次运行还会写一份 `推送日志.txt`（已进 `.gitignore`），出问题直接把它发出来就行。
+> **这台机器到 github.com 的连接时通时断 —— 脚本会自己重试。**
+> 实测：`git ls-remote` 报 `Failed to connect to github.com:443 after 21033 ms:
+> Could not connect to server`，几分钟后原样重跑就通了。
+> 脚本 v3 在「测地址」和「推送」两处都加了自动重试（网络类失败等 4–5 秒重来，
+> 最多 3 次），三次都不通才报「网络不通」，并且不会再把用户引向
+> 「去改地址 / 重新登录」那种完全错误的方向。
+
+> **前两次失败的真实原因（都已在脚本里处置）**
+> - 第一次是两个原因叠在一起：地址配成了 `…/For-She.git`（GitHub 上不存在 →
+>   `Repository not found`），而真实仓库 `She` 有个自动生成的 `Initial commit`
+>   （地址就算改对，也会被 `rejected` 挡回来）。
+> - 第二次是上面的网络超时。
+>
+> 脚本因此改成**先诊断、再推送**：单独测一次地址、把 git 的原始报错原样打出来、
+> 按「找不到仓库 / 登录被拒 / 网络不通」分类给办法、推送前先问要不要覆盖远程，
+> 并在网络类失败时自动重试。每次运行都会写一份 `推送日志.txt`（已进 `.gitignore`）。
 
 **为什么是双击一个脚本，而不是敲命令：** 这台机器上装的是随工具附带的
 **便携版 git** —— 它既不在系统 PATH 里（直接敲 `git` 会提示「不是内部或外部命令」），

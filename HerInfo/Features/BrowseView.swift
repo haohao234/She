@@ -293,8 +293,10 @@ struct RecordDetailView: View {
                                 Pill(text: r.cat.title, style: .selected,
                                      tint: r.cat.tint, soft: r.cat.soft, tiny: true)
                                 if let m = r.reminder, m.isOn {
+                                    // 顺序必须跟 Pill 的存储属性一致（text / style / tint / soft / tiny / onTap），
+                                    // 写成 tiny:…, tint:… 会报 "argument 'tint' must precede argument 'tiny'"。
                                     Pill(text: m.kind == .date ? "已挂提醒" : "到\(m.placeName ?? "那")提醒",
-                                         tiny: true, tint: C.care, soft: C.moss)
+                                         tint: C.care, soft: C.moss, tiny: true)
                                 }
                                 Spacer(minLength: 0)
                             }
