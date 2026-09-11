@@ -628,11 +628,14 @@ warning 总数：11</pre>
   <!-- ══ 之后 ══ -->
   <h2><span class="n">AFTER</span> 编译过了之后</h2>
   <div class="card">
-    <p>编译通过只是个门槛，过了之后还有三件事，按优先级：</p>
+    <p>
+      编译通过只是个门槛，而<b>这个门槛早就过了</b> —— 第 4 轮起连续 20 次全绿
+      （0 error / 0 warning），36 屏和三个 target 全部落地。
+      所以现在只剩一件事：<b>真机验</b>。它缺的不是清单，是<b>通道</b>。
+    </p>
     <table>
-      <tr><td>1</td><td><b>在模拟器里跑一次主流程</b><br><span class="tiny">预检清单第 6 节列了必过的 5 条 —— 添加记录、分类浏览、搜索、设置链、导出。</span></td></tr>
-      <tr><td>2</td><td><b>真机验那两条跨进程验收</b><br><span class="tiny">第 13 条「通知长按展开」和第 14 条「锁屏打标」—— 这是整套交付里唯一跨进程的部分，失败方式很安静，值得单独花时间。</span></td></tr>
-      <tr><td>3</td><td><b>铺开剩下 13 屏</b><br><span class="tiny">它们用的是已经在 Components.swift 里的组件，属于同一模式的重复劳动，不是新判断。</span></td></tr>
+      <tr><td>1</td><td><b>先解决「包怎么进手机」</b><br><span class="tiny">CI 产出的是<b>不签名</b>的 <span class="mono">.app</span>，装不进真机。预检清单 <b>6.0 节</b>列了三条路（借 Mac / 付费开发者账号 / Sideloadly）各自的代价，以及那条<b>硬卡点</b> —— 这个 App 的跨进程通信全靠 App Group，而免费 Apple ID 很可能签不出带 App Group 的包。</span></td></tr>
+      <tr><td>2</td><td><b>过一遍预检清单第 6 节的 22 条</b><br><span class="tiny">其中第 <b>6~9 条</b>（配图管线）只能在真机上验，模拟器连相册选择器都测不到；第 <b>1 / 2 / 22 条</b>依赖 App Group。失败方式都很安静 —— 不报错，只是白做。</span></td></tr>
     </table>
   </div>
 
