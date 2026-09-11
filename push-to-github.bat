@@ -23,6 +23,10 @@ REM       现在只有真的分叉（各有对方没有的提交）才会问。
 REM    b. 「git push 退出码为 0」不等于「推上去了」。退出码在管道里会被
 REM       吃掉，网络半途断掉时 git 也可能先报成功再失败。所以收尾不再看
 REM       退出码，而是拿 ls-remote 的真实 SHA 和本地 HEAD 逐字比对。
+REM    c. 「没报错」也不等于「网络没问题」。系统级 gitconfig 里的
+REM       credential.helper=helper-selector 每次认证空跑 40 秒，push 要认证
+REM       两回 = 80 秒，命令被超时掐死且**一个字都不打印** —— 现场看着
+REM       就是「网络不通」。现在推送前会把它绕开（见 :tune_creds）。
 REM
 REM  v2 改成「先诊断，再推送」：
 REM    1. 先测这个地址到底连不连得上，并把 git 的原始输出原样打出来
@@ -123,7 +127,15 @@ echo.
 REM ═══════════ 5/6 确认并测试远程地址 ═══════════
 REM 先把登录方式配好 —— 下面的地址探测就需要它，否则 ls-remote 拿不到凭据，
 REM 会把「登录没过」误报成「找不到仓库」。
-"!GITEXE!" config --global credential.helper manager >nul 2>&1
+REM
+REM  【v4 修 · 本次失败的真凶】不再粗暴地写 `config --global credential.helper manager`。
+REM  本机实测瓶颈在**系统级** gitconfig 的 `credential.helper=helper-selector`：
+REM  这个「凭据助手选择器」每次认证要空跑约 40 秒（它挨个探测环境里有哪些
+REM  可用的凭据助手），而 git push 一次要认证两回 —— 80 秒就这么没了。
+REM  后果极具迷惑性：命令在超时线上被掐死，屏幕上**一个字的错误都没有**，
+REM  看起来就是「网络不通」，于是人就被赶到换网络、查防火墙的方向去了。
+REM  （实测对照：绕开它之后，同一次推送从「超时」变成 5 秒。）
+call :tune_creds
 
 :ask_url
 set "CURURL="
@@ -229,6 +241,36 @@ set "KIND=OTHER"
 findstr /i /c:"not found" /c:"404" /c:"does not exist" /c:"access denied" "%TMPERR%" >nul 2>&1 && set "KIND=NOTFOUND"
 findstr /i /c:"authentication failed" /c:"could not read username" /c:"invalid username or password" /c:"403" /c:"terminal prompts disabled" "%TMPERR%" >nul 2>&1 && set "KIND=AUTH"
 findstr /i /c:"could not resolve" /c:"failed to connect" /c:"timed out" /c:"connection refused" /c:"connection reset" /c:"was reset" /c:"recv failure" /c:"connect tunnel failed" /c:"network is unreachable" /c:"ssl" "%TMPERR%" >nul 2>&1 && set "KIND=NETWORK"
+exit /b 0
+
+REM ════════════════════════════════════════════════════════════════
+REM  绕开「凭据助手选择器」
+REM
+REM  系统级 gitconfig 里有 `credential.helper=helper-selector`，它每次认证
+REM  要空跑约 40 秒。git push 一次认证两回 = 80 秒，命令直接被超时掐死，
+REM  而且**不打印任何错误** —— 现场看起来就是「网络不通」。
+REM
+REM  绕法：在**仓库级**配置里先写一个空值。git 规定 credential.helper 出现
+REM  空值时会清空前面累积的列表，于是系统级那条选择器就被屏蔽掉了；
+REM  再把用户级已经配好的 git-credential-manager 原样搬过来接上。
+REM  只动这个仓库，不动全局配置，也不动系统配置。
+REM
+REM  这里必须关掉延迟展开：要搬的值形如 !"C:/…/git-credential-manager.exe"，
+REM  开着延迟展开的话那个感叹号会被当成变量引用、把整段值吃掉。
+REM ════════════════════════════════════════════════════════════════
+:tune_creds
+setlocal disabledelayedexpansion
+set "UH="
+for /f "delims=" %%h in ('"%GITEXE%" config --global --get credential.helper 2^>nul') do set "UH=%%h"
+if not defined UH goto :tune_creds_out
+echo %UH% | findstr /i "credential-manager" >nul
+if errorlevel 1 goto :tune_creds_out
+"%GITEXE%" config --local --replace-all credential.helper "" 2>nul
+"%GITEXE%" config --local --add credential.helper "%UH%" 2>nul
+if errorlevel 1 goto :tune_creds_out
+echo         OK  已绕开凭据助手选择器（它每次认证要空跑 40 秒）
+:tune_creds_out
+endlocal
 exit /b 0
 
 REM ── 情况一：找不到这个仓库（最常见：仓库名写错）──────────────
