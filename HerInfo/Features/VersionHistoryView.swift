@@ -81,9 +81,16 @@ struct VersionHistoryView: View {
                         compare(t, c)
                         changeNote(from: t, to: c)
                         restoreBlock(t)
-                    } else if let c = current {
+                    } else if current != nil {
                         // 只有一版。**这不是错误，是起点** ——
                         // 用「还没有可对比的旧版本」而不是「暂无数据」。
+                        //
+                        // 这里写成 `current != nil` 而不是 `let c = current`：
+                        // 这个分支只判断「有没有一版」，并不用那一版本身，
+                        // 绑定一个不用的变量会被编译器报
+                        // 「value 'c' was defined but never used」。
+                        // 那条警告从这一屏建起来就在，直到第 25 轮才被发现 ——
+                        // 因为在那之前只看 CI 是不是绿的，没看它数出来的条数。
                         SCard {
                             Text("这是第一版")
                                 .font(Typo.cardTitle)

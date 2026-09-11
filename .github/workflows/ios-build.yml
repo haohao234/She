@@ -83,6 +83,25 @@ jobs:
           echo "error 总数：$(grep -cE ': error:' build.log || true)"
           echo "warning 总数：$(grep -cE ': warning:' build.log || true)"
 
+      # ── 把「0 warning」从声明变成断言 ────────────────────────
+      # 这个工程对外一直写着「0 error / 0 warning」，但那是**声明** ——
+      # 结果第 12 轮起混进了一条 warning 却没人发现，因为只看绿勾、不看条数。
+      # 现在让它自己红：有 warning 就失败。
+      #
+      # 【红了不等于改坏了】runner 的 Xcode 升级也可能带来新的
+      # deprecation 警告。那种情况看上面那份清单就知道是什么，
+      # 改掉、或者明确写进文档说「这条接受」，两条路都行 ——
+      # 唯独不能让它**静静地**躺在日志里。
+      - name: 把 warning 也当失败（这个工程承诺 0 警告）
+        if: success()
+        run: |
+          N=$(grep -cE ': warning:' build.log || true)
+          if [ "$N" != "0" ]; then
+            echo "::error::$N 条 warning —— 这个工程承诺 0 warning。清单见上面「警告（warning）」那段。"
+            exit 1
+          fi
+          echo "✓ warning 0 条 —— 与文档里的承诺一致"
+
       # ── 打包成可侧载的 IPA（为真机验证加的）─────────────────
       # 上面编出来的 .app 是**不签名**的（runner 上没有任何签名身份），
       # 但它已经是 arm64 的**设备构建** —— Sideloadly 可以拿它当输入，
