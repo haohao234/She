@@ -472,5 +472,34 @@ tab 根屏对空 `path` 调 `removeLast()` 会直接 `fatalError`。
 
 - **不需要切图**：所有图标走 SF Symbols，所有色值走 `Tokens.swift`。
 - **不需要捆绑字体**：见上文第 1 条。
-- 唯一的资产是 App Icon 与启动图，按 1024×1024 源图出即可。
-  品牌色 `#C0614A`，标记是渐变 `linear-gradient(140°, #CE6E56 → #B4523C)`。
+- 唯一的资产是 App Icon，落在 `HerInfo/Assets.xcassets/AppIcon.appiconset/`。
+
+### App 图标：圆环 + 尾巴，不画脸
+
+```
+HerInfo/Assets.xcassets/
+├── Contents.json                      ← 少了它 Xcode 不认这个目录
+└── AppIcon.appiconset/
+    ├── Contents.json                  ← 单尺寸模式，只声明 1024
+    └── AppIcon-1024.png               ← 暖粉底 #E2857A + 白符号
+```
+
+- **为什么只有一张 1024**：Xcode 15+ 的单尺寸图标集只需要 1024×1024，
+  其余尺寸由系统自动缩放。多放几张反而会在资源目录里留下
+  「未分配的图片」警告，所以 `icon-180.png` 那一套刻意没有保留。
+- **为什么必须是 PNG 且不带 alpha**：带 alpha 的图标会被 App Store 拒；
+  系统也不把透明渲染成黑，而是补白底 —— 圆角处会出一圈白边。
+  生成脚本用 `Image.new('RGB', ...)` 从根上避免这件事。
+- **图标的造型决定**：桌面只有 60px，画五官必然糊成一团深色，
+  而「认出她」全压在发型上 —— **脸是多余的**。
+  所以只留两件事：**一个圆环当头**（中间那个洞就是发圈）+ **一条粗尾巴**。
+  缩到 28px 时那个洞还在，整个图标靠它认人。
+  四种构造的比对走查见「我的宝宝江林桐-视觉改版稿」板 1 的 C 区。
+- **`ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon`**（在 `project.yml` 里）
+  是「图标到底用不用」的总开关。资源目录本身会被 `sources` 自动收进
+  Resources build phase，但**没有这一行，Xcode 不知道哪个图标集是 App 图标**
+  —— 表现是编译全绿、装到手机上仍是系统默认的空白图标。
+  `check-project.py` 第 10 节守着这件事。
+
+> 主色 `#E2857A`（暖粉珊瑚）。完整色板与图标规格见
+> `我的宝宝江林桐-视觉改版稿/`。

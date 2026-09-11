@@ -97,6 +97,15 @@ targets:
         # 而 iOS 17 的最低门槛本来就要求 Xcode 15，所以没有兼容问题。
         GENERATE_INFOPLIST_FILE: YES
 
+        # ── App 图标 ────────────────────────────────────────────
+        # 指向 Assets.xcassets 里那个 AppIcon 图标集（HerInfo/Assets.xcassets）。
+        # 这一行是「图标到底用不用」的总开关：资源目录本身会被 sources 自动
+        # 收进 Resources build phase，但**没有这一行，Xcode 不知道哪个图标集
+        # 是 App 图标** —— 表现是编译全绿、装到手机上仍是默认空白图标。
+        # 图标内容：暖粉底 #E2857A + 白符号（圆环 + 尾巴）。
+        # 设计稿见「我的宝宝江林桐-视觉改版稿」。
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
     dependencies:
       # 扩展必须被「嵌入」进主 App 的 PlugIns 目录，光编译不算数。
       # embed + codeSign 是两件事：前者决定它在不在包里，
