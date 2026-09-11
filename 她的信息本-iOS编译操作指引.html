@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>她的信息本 · 编译操作指引 v1.0</title>
+<title>她的信息本 · 编译与真机操作指引 v1.1</title>
 <style>
   :root{
     --bg:#F8F5F0; --card:#FFFFFF; --line:#EFE8E0; --line2:#EAE2D8; --sep:#F1EAE2;
@@ -185,16 +185,17 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow"><i></i>操作指引 · 四步拿到编译结果</div>
+    <div class="eyebrow"><i></i>操作指引 · 从推代码到装进手机</div>
     <h1>怎么让编译器说话</h1>
     <p class="sub">
       你的机器是 Windows，而 Xcode 只跑在 macOS 上 —— 这是 Apple 的硬件约束，绕不过去。
-      所以编译这件事交给云端的 macOS 机器做，只把<b>报错清单</b>带回来给我。
-      好消息是：<b>本地能做的部分我已经全部做完了</b>，你剩下四步。
+      所以编译这件事交给云端的 macOS 机器做（<b>早就跑通了，连续 20 次全绿</b>）。
+      前四步是「怎么拿到编译结果」，<b>第五步是「怎么把包装进手机」</b> ——
+      真机验证要的是后者，而它需要单独接一条通道。
     </p>
     <div class="prog">
       <div class="bar"><i id="bar"></i></div>
-      <span id="ptext">0 / 4 已完成</span>
+      <span id="ptext">0 / 5 已完成</span>
     </div>
   </header>
 
@@ -579,10 +580,10 @@ warning 总数：11</pre>
       <div class="note tip">
         <span class="ic">▸</span>
         <div>
-          <b>然后我做什么。</b>按行改 → 重跑 <span class="mono">check-swift.js</span>（17 项）+
+          <b>然后我做什么。</b>按行改 → 重跑 <span class="mono">check-swift.js</span>（26 项）+
           <span class="mono">check-project.py</span> 保证不回归 → 你再推一次。
           如果报错落在预检清单第 3 节的三类之外，那是真错误，同时也说明我的静态判据漏了一类 ——
-          我会把新判据补进脚本，让下一轮不用再靠人眼通读 5524 行。
+          我会把新判据补进脚本，让下一轮不用再靠人眼通读 9955 行。
           <b>只出现那三类的话，通常一轮就收敛。</b>
         </div>
       </div>
@@ -626,6 +627,127 @@ warning 总数：11</pre>
   </div>
 
   <!-- ══ 之后 ══ -->
+  <!-- ══ STEP 05 ══ -->
+  <h2><span class="n">STEP 05</span> 把包装进手机（真机验证用）</h2>
+  <div class="step" data-step="5">
+    <div class="step-head">
+      <div class="num">5</div>
+      <div class="tt">
+        <h3>用 Sideloadly 装到 iPhone</h3>
+        <p>不花钱，用你自己的 Apple ID 签名。7 天过期，Sideloadly 会自动续签。</p>
+      </div>
+      <div class="chk"><input type="checkbox" aria-label="第 5 步完成"></div>
+    </div>
+    <div class="body">
+
+      <div class="note warn">
+        <span class="ic">⚠</span>
+        <div>
+          <b>先说清楚这条路验不到什么。</b>这个 App 的「通知里打标」和「分享进来」，
+          靠的是 <b>App Group</b>（跨进程共享容器）。免费 Apple ID 签出来的包
+          <b>很可能带不上 App Group</b> —— 所以<b>第 1 / 2 / 22 条大概率验不了</b>；
+          第 6~9 条（配图管线）和其余单进程的条目<b>不受影响</b>。
+          看到 <code>application-groups</code> 的报错，<b>不用怀疑代码</b>，那是账号能力的问题。
+          三条路的代价对照在 <b>编译预检清单 6.0 节</b>。
+        </div>
+      </div>
+
+      <h4>第 1 步 · 装两个「网页版」的 Apple 组件</h4>
+      <p class="tiny">
+        Sideloadly 靠苹果官方的驱动跟手机通信，而它<b>不认 Microsoft Store 版</b>的
+        iTunes / iCloud —— 装了那种要先卸掉，否则连不上手机。
+      </p>
+      <ol class="how">
+        <li>先到 <kbd>设置 › 应用 › 已安装的应用</kbd> 里看有没有从商店装的 <b>iTunes</b> 或 <b>iCloud</b>，有就<b>卸载</b>。</li>
+        <li>到 Apple 官网下载页装 <b>网页版的 iTunes</b>（找「Windows 版」，不是商店那个）。</li>
+        <li>同样装 <b>网页版的 iCloud for Windows</b>。</li>
+      </ol>
+
+      <h4>第 2 步 · 下载 Sideloadly</h4>
+      <p class="tiny">
+        只从官网 <code>sideloadly.io</code> 下，别走第三方下载站。选 <b>Windows 64 位</b>。
+        它是一个绿色小程序，不装系统服务。
+      </p>
+
+      <h4>第 3 步 · 把 IPA 下下来</h4>
+      <ol class="how">
+        <li>打开 <code>github.com/haohao234/She/actions</code>，点最新那次<b>绿色勾</b>的 run。</li>
+        <li>页面拉到最下面找 <b>Artifacts</b> 区，下载 <b>HerInfo-ipa</b> —— 会得到一个 zip，解开就是
+          <code>HerInfo-&lt;提交号&gt;-unsigned.ipa</code>。</li>
+        <li><b>Artifacts 必须登录 GitHub 才能下</b>，仓库是公开的也一样（这是 GitHub 的规矩，不是权限没给）。
+          手机上直接点会下不动，用电脑浏览器登录后下。</li>
+      </ol>
+      <div class="note alt">
+        <span class="ic">i</span>
+        <div>
+          文件名里的 <code>unsigned</code> 是<b>故意的</b>。云端那台机器上没有任何签名身份，
+          它签不了 —— 签名这一步由 Sideloadly 在<b>你这台 Windows 上</b>用你的 Apple ID 做。
+          IPA 本身没有魔法：就是「一个叫 <span class="mono">Payload</span> 的文件夹里放着
+          <span class="mono">.app</span>」再打包，<b>不签名也能打</b>。
+        </div>
+      </div>
+
+      <h4>第 4 步 · 装</h4>
+      <ol class="how">
+        <li>iPhone 用数据线连上电脑，手机上点「<b>信任此电脑</b>」。</li>
+        <li>打开 Sideloadly，把那个 <code>.ipa</code> <b>拖进窗口</b>。</li>
+        <li>在 <b>Apple ID</b> 那一栏填你的 Apple ID —— <b>免费账号就行</b>。</li>
+        <li>确认上面显示的设备是你的 iPhone，点 <b>Start</b>。</li>
+        <li>它会要<b>两次验证码</b>（双重认证），按手机上收到的填。<b>这是正常的，不是出错。</b></li>
+      </ol>
+
+      <h4>第 5 步 · 手机上还要开两个开关（漏了会「装上了却打不开」）</h4>
+      <ol class="how">
+        <li><b>开发者模式</b>：<kbd>设置 › 隐私与安全性 › 开发者模式</kbd> → 打开 →
+          <b>手机会要求重启一次</b>。iOS 16 及以上必须有这一步，而且这个开关
+          <b>只在插过电脑之后才会出现</b>。</li>
+        <li><b>信任证书</b>：<kbd>设置 › 通用 › VPN 与设备管理</kbd> → 点你 Apple ID 那一条 → <b>信任</b>。</li>
+        <li>回桌面，<b>她的信息本</b>应该就能打开了。</li>
+      </ol>
+      <div class="note tip">
+        <span class="ic">▸</span>
+        <div>
+          <b>7 天过期</b>是免费账号的硬限制 —— Apple 官方写的是
+          <b>10 个 App ID / 3 台设备 / 描述文件 7 天</b>。
+          Sideloadly 自带<b>自动续签</b>：在它的设置里打开自动刷新，之后只要电脑和手机
+          在同一个 Wi-Fi（或者插着线），它会在到期前自动重新签好，不用你管。
+        </div>
+      </div>
+
+      <h4>万一失败：按报错分两类</h4>
+      <div class="two">
+        <div class="box bad">
+          <h4>报 application-groups</h4>
+          <ul>
+            <li>原话大致是 <code>None of the valid provisioning profiles allowed the specified entitlements: com.apple.security.application-groups</code></li>
+            <li><b>这是账号能力问题，不是代码问题。</b></li>
+            <li>包一般还是能装上（带不上的 entitlement 会被去掉），只是通知打标、分享进来那两条线是<b>哑的</b>。</li>
+            <li>想真验那几条，只能换路：<b>借一台 Mac</b>，或者<b>付费开发者账号</b>。</li>
+          </ul>
+        </div>
+        <div class="box bad">
+          <h4>装上了，但扩展是哑的</h4>
+          <ul>
+            <li>表现：通知里长按<b>没有</b>那个展开界面；分享面板里<b>没有</b>「她的信息本」。</li>
+            <li>两个可能：扩展没被嵌进包里（云端那步会打印 <span class="mono">PlugIns</span> 列表，去核对），或者
+              <b>Bundle ID 前缀对不上</b>。</li>
+            <li>用 Sideloadly 的「改 Bundle ID」时，<b>两个扩展的 id 必须跟着改前缀</b>
+              （现在是 <code>com.herinfo.app.notification</code> / <code>com.herinfo.app.share</code>），
+              前缀对不上<b>扩展就不加载，而且不报错</b>。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note alt">
+        <span class="ic">i</span>
+        <div>
+          卡住就把 Sideloadly 的<b>安装日志</b>整段贴回来 —— 它比界面上那句提示详细得多。
+          界面里那句通常是「Failed to code sign」，真正的线索在日志里。
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <h2><span class="n">AFTER</span> 编译过了之后</h2>
   <div class="card">
     <p>
@@ -650,7 +772,7 @@ warning 总数：11</pre>
   </div>
 
   <footer>
-    <span>她的信息本 · iOS 编译操作指引 v1.0</span>
+    <span>她的信息本 · iOS 编译与真机操作指引 v1.1</span>
     <span>配套：编译预检清单 · 开发交接文档 · project.yml</span>
   </footer>
 

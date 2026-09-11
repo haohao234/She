@@ -83,6 +83,44 @@ jobs:
           echo "error 总数：$(grep -cE ': error:' build.log || true)"
           echo "warning 总数：$(grep -cE ': warning:' build.log || true)"
 
+      # ── 打包成可侧载的 IPA（为真机验证加的）─────────────────
+      # 上面编出来的 .app 是**不签名**的（runner 上没有任何签名身份），
+      # 但它已经是 arm64 的**设备构建** —— Sideloadly 可以拿它当输入，
+      # 用你自己的 Apple ID 在 Windows 那侧重新签名后装进手机。
+      #
+      # IPA 本身没有任何魔法：就是「一个叫 Payload 的文件夹里放 .app」再 zip。
+      # 所以不签名也能打；签名不是这一步的事。
+      #
+      # 打不出来的情况只有两种：产物路径变了（下面会自己找并把候选打出来）、
+      # 或者扩展没被嵌进去（那样也能装，但通知/分享两条线是死的 —— 所以也一并打出来看）。
+      - name: 打成可侧载的 IPA（不签名）
+        if: success()
+        run: |
+          APP=$(find build/Build/Products -maxdepth 2 -name "*.app" -type d | head -1)
+          if [ -z "$APP" ]; then
+            echo "::error::没找到 .app —— 构建产物路径变了？下面是 build 里的全部 .app："
+            find build -maxdepth 5 -name "*.app" -type d || true
+            exit 1
+          fi
+          echo "找到：$APP"
+          echo "--- 嵌进去的扩展（应该是 2 个 .appex）---"
+          ls -1 "$APP/PlugIns" 2>/dev/null || echo "::warning::没有 PlugIns —— 扩展没被嵌进去，装上后通知与分享两条线是死的"
+          rm -rf Payload && mkdir -p Payload
+          cp -R "$APP" Payload/
+          SHORT=$(echo "$GITHUB_SHA" | cut -c1-7)
+          IPA="HerInfo-${SHORT}-unsigned.ipa"
+          zip -qry "$IPA" Payload
+          echo "打好：$IPA"
+          ls -lh "$IPA"
+
+      - name: 上传 IPA
+        if: success()
+        uses: actions/upload-artifact@v5
+        with:
+          name: HerInfo-ipa
+          path: HerInfo-*-unsigned.ipa
+          retention-days: 30
+
       - name: 保存完整日志
         if: always()
         uses: actions/upload-artifact@v5
