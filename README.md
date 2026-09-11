@@ -111,7 +111,7 @@ xcodegen generate          # 生成 HerInfo.xcodeproj
 open HerInfo.xcodeproj
 ```
 
-然后在 Xcode 里选一次自己的 Team（两个 target 都要选），⌘B。
+然后在 Xcode 里选一次自己的 Team（**三个 target 都要选** —— 主 App + 两个扩展），⌘B。
 真机跑还需要一份带 App Groups 的 provisioning profile。
 
 `.xcodeproj` 是生成物、不入库 —— 想改工程结构就改 `project.yml` 再重新生成。
@@ -227,7 +227,7 @@ open HerInfo.xcodeproj
   桥接用的 `MoodLevelOption` 只桥**三档** —— 与 09 屏那三个按钮一致；
   也刻意**不把 `MoodLevel` 本身改成 `AppEnum`**，那会让数据模型去依赖 AppIntents。
 
-**分享扩展**（`HerInfoShare/`，两个文件 355 行）—— 09 屏那一行原文是
+**分享扩展**（`HerInfoShare/`，两个文件 360 行）—— 09 屏那一行原文是
 「把她的原话分享进来，自动存成一条记录」。四个判断值得说明：
 
 1. **分类由用户点，不由我们猜。** `Record.cat` 是必填的四值枚举，没有「未分类」；
@@ -356,7 +356,7 @@ open HerInfo.xcodeproj
 > 去掉就行，一行的事。
 
 > 14 / 36 锁屏通知**不在这份清单里** —— 它是这套骨架里唯一需要动工程配置的东西，
-> 已经整块写完了（两个 target、共享契约、Info.plist 六个键、主 App 侧六处接线）。
+> 已经整块写完了（主 App + 那个扩展两个 target、共享契约、Info.plist 六个键、主 App 侧六处接线）。
 > 想核对「哪个键漏了会白做」，看交接文档的「通知内容扩展」一章。
 **如果照搬时发现某一屏需要「新写一个组件」，那多半意味着设计里那屏用了别人没有的样式 ——
 先回头看设计，别急着加组件。**
