@@ -41,6 +41,10 @@ final class NotificationViewController: UIViewController, UNNotificationContentE
     private var image: UIImage?
     private var isExpanded = false
 
+    /// 这条通知自己的 request 标识。
+    /// 打标后要把它从通知中心撤掉，而撤销接口只认标识，不认「当前这条」。
+    private var requestID: String?
+
     override func viewDidLoad() {
         super.viewDidLoad()
         // 透明底：系统已经铺了毛玻璃，再填一层会把壁纸的模糊感盖掉。
@@ -52,6 +56,7 @@ final class NotificationViewController: UIViewController, UNNotificationContentE
 
     func didReceive(_ notification: UNNotification) {
         let c = notification.request.content
+        requestID = notification.request.identifier
         payload = HINotify.Payload(userInfo: c.userInfo,
                                    fallbackTitle: c.title,
                                    fallbackBody: c.body)
@@ -116,9 +121,25 @@ final class NotificationViewController: UIViewController, UNNotificationContentE
 
         // 给「已记下」留一点可见时间。立刻把通知收走，等于没有反馈 ——
         // 而锁屏上的按钮最怕的就是「点了之后不知道成没成」。
-        Task {
+        //
+        // 收尾要分两步，它们是两件不同的事：
+        //
+        //  ① dismissNotificationContentExtension() 只把「展开的这张卡」收回去，
+        //     **不会**把通知本身从通知中心撤掉（WWDC 2018 场次 710 明确讲了这点）。
+        //     注意它不叫 dismissNotification() —— 那个名字根本不存在，
+        //     写了会在编译期报「NSExtensionContext has no member」。
+        //     它定义在 UserNotificationsUI 里，所以本文件必须 import 那个库（见文件头）。
+        //
+        //  ② removeDeliveredNotifications 才是真的把这条通知撤掉。
+        //     少了这一步，用户打标后通知还躺在通知中心里，
+        //     从用户的视角看就是「点了没反应」。
+        Task { @MainActor in
             try? await Task.sleep(nanoseconds: 700_000_000)
-            extensionContext?.dismissNotification()
+            extensionContext?.dismissNotificationContentExtension()
+            if let id = requestID {
+                UNUserNotificationCenter.current()
+                    .removeDeliveredNotifications(withIdentifiers: [id])
+            }
         }
     }
 
