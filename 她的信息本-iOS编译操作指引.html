@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>她的信息本 · 编译与真机操作指引 v1.2</title>
+<title>她的信息本 · 编译与真机操作指引 v1.3</title>
 <style>
   :root{
     --bg:#F8F5F0; --card:#FFFFFF; --line:#EFE8E0; --line2:#EAE2D8; --sep:#F1EAE2;
@@ -754,10 +754,15 @@ warning 总数：11</pre>
       <div class="note tip">
         <span class="ic">▸</span>
         <div>
-          <b>7 天过期</b>是免费账号的硬限制 —— Apple 官方写的是
-          <b>10 个 App ID / 3 台设备 / 描述文件 7 天</b>。
-          Sideloadly 自带<b>自动续签</b>：在它的设置里打开自动刷新，之后只要电脑和手机
-          在同一个 Wi-Fi（或者插着线），它会在到期前自动重新签好，不用你管。
+          <b>装上了就顺手把「自动续签」打开 —— 这是装完之后唯一必须做的一件事。</b>
+          <br>7 天过期是免费账号的硬限制（Apple 官方写的是 <b>10 个 App ID / 3 台设备 /
+          描述文件 7 天</b>）。<b>不开自动续签的话，一周后 App 就会打不开</b> ——
+          那时再去处理，比现在多点两下麻烦得多。
+          <br>→ Sideloadly 主界面勾上 <span class="mono">auto-refresh</span>（设置里同名的开关）。
+          之后只要电脑和手机在同一个 Wi-Fi（或者插着线），它会在到期前自动重新签好，不用你管。
+          <br>→ <b>值得注意的是「App 还在、只是签名过期」和「App 被删了」是两回事</b>：
+          前者数据都还在，续签一下就好；所以<b>别一看打不开就卸载重装</b> ——
+          那会把记过的东西一起清掉。
         </div>
       </div>
 
@@ -873,16 +878,18 @@ warning 总数：11</pre>
     </div>
   </div>
 
-  <h2><span class="n">AFTER</span> 编译过了之后</h2>
+  <h2><span class="n">AFTER</span> 已经装上了 —— 之后只剩两件事</h2>
   <div class="card">
     <p>
-      编译通过只是个门槛，而<b>这个门槛早就过了</b> —— 第 4 轮起连续 <b>24 次成功</b>，
-      36 屏和三个 target 全部落地。流水线现在还会顺带产出一份<b>可侧载的 IPA</b>。
-      所以现在只剩一件事：<b>真机验</b>。它缺的不是清单，是<b>通道</b>。
+      <b>2026-09-11：这份 IPA 已在 iPhone（iOS 17.7）上安装成功、可以正常使用。</b>
+      也就是说整条路已经走通：<b>没有 Mac，也能把这个 App 编译出来、装进手机、用起来</b>。
+      编译这一侧早就不缺什么了 —— 第 4 轮起连续 <b>29 次成功</b>（run 4~32），
+      36 屏和三个 target 全部落地；现在流水线还顺带产出<b>可侧载的 IPA</b>，
+      并会自己拆包验货（扩展数量 / 版本键 / 调试动态库）。
     </p>
     <table>
-      <tr><td>1</td><td><b>先解决「包怎么进手机」</b><br><span class="tiny">CI 产出的是<b>不签名</b>的 <span class="mono">.app</span>，装不进真机。预检清单 <b>6.0 节</b>列了三条路（借 Mac / 付费开发者账号 / Sideloadly）各自的代价，以及那条<b>硬卡点</b> —— 这个 App 的跨进程通信全靠 App Group，而免费 Apple ID 很可能签不出带 App Group 的包。</span></td></tr>
-      <tr><td>2</td><td><b>过一遍预检清单第 6 节的 22 条</b><br><span class="tiny">其中第 <b>6~9 条</b>（配图管线）只能在真机上验，模拟器连相册选择器都测不到；第 <b>1 / 2 / 22 条</b>依赖 App Group。失败方式都很安静 —— 不报错，只是白做。</span></td></tr>
+      <tr><td>1</td><td><b>把「自动续签」打开（唯一一件必须做的）</b><br><span class="tiny">免费 Apple ID 签的包<b>只有 7 天</b>。不开自动续签，一周后 App 会突然打不开 —— 而那时多半已经忘了是怎么回事。开法见 STEP 05 那条 tip。<b>注意：打不开 ≠ 数据丢了，别卸载重装。</b></span></td></tr>
+      <tr><td>2</td><td><b>过一遍预检清单第 6 节的 22 条</b><br><span class="tiny">App 能用了不等于每条都对。其中第 <b>6~9 条</b>（配图管线）只能在真机上验；第 <b>1 / 2 / 22 条</b>依赖 App Group ——<b>免费账号签出来的包很可能没带 App Group</b>，所以通知打标、分享进来那两条线有可能是哑的。失败方式都很安静：不报错，只是白做。</span></td></tr>
     </table>
   </div>
 
@@ -891,13 +898,14 @@ warning 总数：11</pre>
     <p>
       建一个空仓库（<b>三个勾都别勾</b>）→ 在 <span class="mono">她的信息本-iOS</span> 目录里
       <b>git remote add</b> 再 <b>git push</b> → 等 Actions 跑完 →
-      把 error / warning 两段贴回来。
+      <b>点最上面那次运行</b>下 <span class="mono">HerInfo-ipa</span>（解开 zip，里面的 .ipa 约 <b>1.15 MB</b>）→
+      拖进 Sideloadly（<b>装之前瞄一眼第一行 <span class="mono">Using IPA file:</span></b>）。
     </p>
     <p style="margin-bottom:0">卡在任何一步，把屏幕上的字贴给我就行。</p>
   </div>
 
   <footer>
-    <span>她的信息本 · iOS 编译与真机操作指引 v1.2</span>
+    <span>她的信息本 · iOS 编译与真机操作指引 v1.3</span>
     <span>配套：编译预检清单 · 开发交接文档 · project.yml</span>
   </footer>
 
@@ -967,7 +975,7 @@ warning 总数：11</pre>
     var bar = document.getElementById('bar');
     var txt = document.getElementById('ptext');
     if(bar) bar.style.width = pct + '%';
-    if(txt) txt.textContent = n + ' / ' + steps.length + ' 已完成' + (n === steps.length ? ' · 就等编译结果了' : '');
+    if(txt) txt.textContent = n + ' / ' + steps.length + ' 已完成' + (n === steps.length ? ' · 可以装进手机了' : '');
   }
 
   document.addEventListener('change', function(e){
