@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>她的信息本 · 编译与真机操作指引 v1.1</title>
+<title>她的信息本 · 编译与真机操作指引 v1.2</title>
 <style>
   :root{
     --bg:#F8F5F0; --card:#FFFFFF; --line:#EFE8E0; --line2:#EAE2D8; --sep:#F1EAE2;
@@ -683,6 +683,17 @@ warning 总数：11</pre>
         <li><b>Artifacts 必须登录 GitHub 才能下</b>，仓库是公开的也一样（这是 GitHub 的规矩，不是权限没给）。
           手机上直接点会下不动，用电脑浏览器登录后下。</li>
       </ol>
+      <div class="note tip">
+        <span class="ic">▸</span>
+        <div>
+          <b>先认包，再拖进去（这一步能省掉一整轮排查）。</b>
+          对的包：文件名是 <code>HerInfo-&lt;提交号&gt;-unsigned.ipa</code>，体积<b>1 MB 出头</b>。
+          <br>→ <b>2 MB 左右的那个是修复前的旧包，直接别用</b> —— 它装不上，报错原文见下面
+          「万一失败」里那条 <span class="mono">app extension placeholder</span>。
+          <br>→ 文件名里的提交号要跟<b>最新那次 run</b> 对得上，所以一定点<b>页面最上面（最新）</b>那次运行，
+          别用浏览器里留着的旧下载。
+        </div>
+      </div>
       <div class="note warn">
         <span class="ic">⚠</span>
         <div>
@@ -767,15 +778,48 @@ warning 总数：11</pre>
         <tr><td>7</td><td><b>还不行，就把扩展去掉再试</b> —— Sideloadly 高级选项里有 <b>Remove App Extensions</b>（也可以解开 IPA、删掉 <span class="mono">Payload/HerInfo.app/PlugIns</span> 再压回去）。<br><span class="tiny"><b>代价写清楚</b>：去掉扩展 = 通知打标与分享两条线<b>彻底</b>没得验。但在免费账号下它们<b>本来就是哑的</b>（App Group 带不上），所以这一步换来的是「主 App 至少装得上、能跑」——是否值得由你定。</span></td></tr>
       </table>
 
+      <div class="note warn">
+        <span class="ic">⚠</span>
+        <div>
+          <b><code>Failed to create app extension placeholder … bundleVersion must be set in
+          placeholder attributes for an app extension placeholder</code>
+          —— 撞上这一条，几乎只有一个原因：你装的是修复前的旧包。</b>
+          <br>这是<b>真机</b>（iOS 的安装服务）在拒，不是在拒你的 Apple ID，也不是网络问题。
+          那个包的<b>三个 bundle 都缺 <code>CFBundleVersion</code></b>（安装校验的必填项），
+          而 <b>主 App 的 placeholder 允许缺、扩展的不允许</b> —— 所以报错点落在
+          <code>HerInfoShare.appex</code> 上，而不是主 App。三个 bundle 都带病，先被拦下的是扩展。
+          <br>→ <b>换个包就好，不用改任何设置、也不用重装 iTunes。</b>
+          怎么认包：见上面第 3 步那张「先认包」—— 约 <b>2 MB</b> 的是旧的，<b>1 MB 出头</b>的是现在这个。
+        </div>
+      </div>
+
       <div class="note alt">
         <span class="ic">i</span>
         <div>
-          <b>包这一侧的问题已经堵掉了。</b>上面那个版本的包里其实有<b>两个真毛病</b>：
-          三个 bundle 都缺 <code>CFBundleVersion</code>（安装校验的必填项），
+          <b>报错里那串 <code>com.herinfo.app.6LS7VTC3LX.share</code> 不是你写错了 id。</b>
+          中间那十位是 Sideloadly 的<b>「自动 Bundle ID」</b>加的唯一后缀（免费账号下默认开着，
+          这样同一个包能重复装、也不会撞别人的 id）。它给主 App 加了后缀，
+          <b>也把两个扩展的 id 一起改成了带同一后缀的形式</b> —— 前缀对得上，这是对的。
+          <br>→ 但留个心眼：<b>如果哪天报的是
+          <code>Attempted to set app extension placeholder promise with bundle ID … does not match
+          required prefix of …</code></b>，那是它<b>只改了主 App、没改扩展</b>（社区里最常见的失败形态）。
+          这时到高级选项里<b>关掉 <code>Use automatic bundle ID</code></b>，手动指定一个 id 再装。
+          <br>→ 顺带记着：<b>关掉它</b>还有个好处 —— 后缀每次都变，等于每次都是「新 App」，
+          上一次装的数据不会被带过来。
+        </div>
+      </div>
+
+      <div class="note alt">
+        <span class="ic">i</span>
+        <div>
+          <b>包这一侧的问题已经堵掉了。</b>上面那个版本的包里其实有<b>三个真毛病</b>：
+          三个 bundle 都缺 <code>CFBundleVersion</code>（真机上被拒的原话就是上面那条
+          <span class="mono">app extension placeholder</span> 报错），
           而且它是 Debug 配置 —— 带着一个 <b>7.7 MB 的调试动态库</b>，
           主程序只剩 <b>71 KB 的壳</b>。
           现在流水线改成 <b>Release</b> 构建、补齐版本号，
-          并且<b>多了一步拆包自检</b>：这两样再出问题，<b>CI 会直接红，
+          并且<b>多了一步拆包自检</b>：扩展少嵌、版本键缺失或与主 App 不一致、
+          带着调试动态库 —— <b>这四样里任何一样出问题，CI 会直接红，
           坏包不会变成你能下载的 artifact</b>。
         </div>
       </div>
@@ -840,7 +884,7 @@ warning 总数：11</pre>
   </div>
 
   <footer>
-    <span>她的信息本 · iOS 编译与真机操作指引 v1.1</span>
+    <span>她的信息本 · iOS 编译与真机操作指引 v1.2</span>
     <span>配套：编译预检清单 · 开发交接文档 · project.yml</span>
   </footer>
 

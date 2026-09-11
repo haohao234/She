@@ -145,33 +145,65 @@ jobs:
           ls -lh "$IPA"
 
       # ── 拆包自检（不然缺陷会一路走到手机上）────────────────────
-      # 下面两项都是**编译全绿也照样存在**的问题，只有把包拆开才看得见。
+      # 下面三项都是**编译全绿也照样存在**的问题，只有把包拆开才看得见。
       # 它们的共同点是：造出来的包「看起来正常」，装的时候才拒。
       #
-      # ① 版本键缺失 —— 三个 target 都开 GENERATE_INFOPLIST_FILE，
+      # ① 扩展数量 —— 少嵌一个，装得上、主 App 照跑，只是那条线在界面上
+      #    看不出来地死掉。所以按数字判，不按「看着对不对」判。
+      # ② 版本键缺失 —— 三个 target 都开 GENERATE_INFOPLIST_FILE，
       #    而 MARKETING_VERSION / CURRENT_PROJECT_VERSION 没设时，
       #    生成出来的是空值，于是这两个键**根本不存在**（不报错）。
-      #    本工程实测过一次，且 CFBundleVersion 是安装校验的必填项。
-      # ② Debug 配置的调试动态库 —— 见上面「为什么是 Release」那段。
+      #    本工程实测过一次：真机上被拒的原话是
+      #      bundleVersion must be set in placeholder attributes
+      #      for an app extension placeholder
+      #    —— 注意它**只点名扩展**：主 App 的 placeholder 允许缺版本，
+      #    扩展的不允许，于是三个 bundle 都带病的包，报错点落在 .appex 上。
+      # ③ Debug 配置的调试动态库 —— 见上面「为什么是 Release」那段。
       #
       # 放在上传之前：坏的包**不该变成用户能下载的 artifact**。
       # 用户是照着指引去点 Artifacts 的人，他不会拆包看版本键。
-      - name: 校验 IPA 内容（版本键 / 调试动态库）
+      - name: 校验 IPA 内容（扩展数量 / 版本键 / 调试动态库）
         if: success()
         run: |
           APP=$(find build/Build/Products -maxdepth 2 -name "*.app" -type d | head -1)
           FAIL=0
 
           echo "=========================================="
+          echo " 嵌进来的扩展（应为 2 个）"
+          echo "=========================================="
+          ls -1 "$APP/PlugIns" 2>/dev/null || echo "（没有 PlugIns 目录）"
+          N_APPEX=$(find "$APP/PlugIns" -maxdepth 1 -name "*.appex" -type d 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$N_APPEX" != "2" ]; then
+            echo "::error::PlugIns 里有 $N_APPEX 个 .appex，应为 2 个（HerInfoNotification / HerInfoShare）—— 查 project.yml 里两条 embed 声明"
+            FAIL=1
+          else
+            echo "  OK   2 个 .appex"
+          fi
+
+          echo ""
+          echo "=========================================="
           echo " 版本键（应为主 1.0 / 构建 1）"
           echo "=========================================="
-          for b in "$APP" "$APP"/PlugIns/*.appex; do
+          APP_BUILD=$(plutil -extract CFBundleVersion raw "$APP/Info.plist" 2>/dev/null || echo "")
+          APP_SHORT=$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist" 2>/dev/null || echo "")
+          if [ -z "$APP_SHORT" ] || [ -z "$APP_BUILD" ]; then
+            echo "::error::$(basename "$APP") 缺版本键（Short='$APP_SHORT' Build='$APP_BUILD'）—— 查 project.yml 的 MARKETING_VERSION / CURRENT_PROJECT_VERSION"
+            FAIL=1
+          else
+            echo "  OK   $(basename "$APP")   $APP_SHORT ($APP_BUILD)"
+          fi
+          # 扩展的版本必须与宿主 App **相同**（Apple 的硬要求，不是我们的偏好）。
+          # 不一致时报错长得像别的问题，所以这里显式比一遍。
+          for b in "$APP"/PlugIns/*.appex; do
             [ -d "$b" ] || continue
             NAME=$(basename "$b")
             SHORT=$(plutil -extract CFBundleShortVersionString raw "$b/Info.plist" 2>/dev/null || echo "")
             BUILD=$(plutil -extract CFBundleVersion raw "$b/Info.plist" 2>/dev/null || echo "")
             if [ -z "$SHORT" ] || [ -z "$BUILD" ]; then
               echo "::error::$NAME 缺版本键（Short='$SHORT' Build='$BUILD'）—— 查 project.yml 的 MARKETING_VERSION / CURRENT_PROJECT_VERSION"
+              FAIL=1
+            elif [ "$BUILD" != "$APP_BUILD" ] || [ "$SHORT" != "$APP_SHORT" ]; then
+              echo "::error::$NAME 的版本（$SHORT / $BUILD）与主 App（$APP_SHORT / $APP_BUILD）不一致 —— 扩展版本必须与宿主相同，否则真机装不上"
               FAIL=1
             else
               echo "  OK   $NAME   $SHORT ($BUILD)"
