@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    主 App 的 entitlements（参考件）。
+
+    Xcode 新建工程时会自己生成一个同名文件 —— 不要覆盖它，
+    只把 application-groups 那一段合并进去即可。
+
+    App Group 的用途只有一个：通知扩展把打标丢进共享收件箱。
+    两边都要开这一条，且**字符串必须完全一致**；只有一边开了，
+    另一边的 UserDefaults(suiteName:) 会返回 nil，而 nil 的表现是
+    「打标静默丢失」—— 不报错、不崩溃。
+
+    注意：文件「App」里能看见导出文件，靠的不是 entitlement，
+    而是 Info.plist 里的 UIFileSharingEnabled + LSSupportsOpeningDocumentsInPlace。
+    见 `HerInfo/Info.plist`（那四条都在那里，每条都注了「缺了会怎样」）。
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.herinfo.app</string>
+	</array>
+</dict>
+</plist>

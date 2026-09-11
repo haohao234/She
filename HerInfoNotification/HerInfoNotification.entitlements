@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    扩展的 entitlements。
+    只需要一条：加入 App Group —— 打标收件箱放在那里。
+    配图**不需要**共享容器（走 UNNotificationAttachment 由系统搬运）。
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.com.herinfo.app</string>
+	</array>
+</dict>
+</plist>

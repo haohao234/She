@@ -1,0 +1,88 @@
+# ============================================================
+#  她的信息本 · iOS 编译检查
+# ============================================================
+#  这个工作流的唯一目的是：**让真正的编译器说话**。
+#
+#  本机是 Windows，没有 Xcode。上一轮我逐行静态通读了 5524 行，
+#  但有三类问题只有编译器能裁决（#Predicate 宏捕获、Swift 6 严格并发、
+#  自定义 Layout 边界）。GitHub 的 macOS runner 上装着完整的 Xcode，
+#  把代码推上来就能换回一份真实的错误清单。
+#
+#  【为什么不用它做「测试」】
+#  这里只编译、不跑模拟器、不做签名。因为当前阶段要的不是
+#  「App 跑起来了吗」，而是「它编译得过吗」。编译过了再谈跑。
+#
+#  【免费额度】
+#  公开仓库：不限时。私有仓库：每月 2000 分钟（macOS runner 按 10 倍
+#  计费，即实际可用 200 分钟 ≈ 40 次编译）。这个工作流单次约 3–5 分钟。
+# ============================================================
+
+name: iOS 编译检查
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:        # 也允许在网页上手动点一下就跑
+
+jobs:
+  build:
+    name: xcodebuild（不签名）
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 环境信息
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: 安装 XcodeGen 并生成工程
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          echo "--- 生成的工程 ---"
+          ls -d *.xcodeproj
+
+      - name: 编译
+        id: build
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project HerInfo.xcodeproj \
+            -scheme HerInfo \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            2>&1 | tee build.log
+
+      # 编译失败时上面的步骤会红，但真正要给人看的是「错误清单」，
+      # 而不是 3000 行构建日志。这一段把它摘出来。
+      - name: 摘出错误与警告
+        if: always()
+        run: |
+          echo "=========================================="
+          echo " 错误（error）"
+          echo "=========================================="
+          grep -E "^[^ ]+:[0-9]+:[0-9]+: error:" build.log | sort -u || echo "（无）"
+          echo ""
+          echo "=========================================="
+          echo " 警告（warning）"
+          echo "=========================================="
+          grep -E "^[^ ]+:[0-9]+:[0-9]+: warning:" build.log | sort -u || echo "（无）"
+          echo ""
+          echo "------------------------------------------"
+          echo "error 总数：$(grep -cE ': error:' build.log || true)"
+          echo "warning 总数：$(grep -cE ': warning:' build.log || true)"
+
+      - name: 保存完整日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 14

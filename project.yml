@@ -1,0 +1,125 @@
+# ============================================================
+#  HerInfo · XcodeGen 工程声明
+# ============================================================
+#  为什么用这个文件而不是直接给 .xcodeproj：
+#
+#  ① .xcodeproj 是一堆 UUID 的 XML，两个人改必冲突，diff 出来也看不懂。
+#     这份 YAML 是「工程结构的唯一真相」，谁改了什么一眼看得出来。
+#
+#  ② 它把 README 里那六步手工操作变成了「不可遗漏的声明」：
+#     最容易漏的三件事 —— 契约文件少勾一个 target、App Group 少开一边、
+#     扩展的 bundle id 没挂到主 App 下面 —— 在这里都是结构性的，漏不了。
+#     那三件事的共同点是：漏了不报错，只是静默功能不全。
+#
+#  ③ 它是「在 Windows 上也能出工程」的前提。
+#     xcodegen 只读 YAML、写 .xcodeproj，不碰 Apple SDK，任何系统都能跑。
+#     真正的编译仍然需要 macOS —— 但已经可以交给云端 CI 了。
+#
+#  用法：
+#     brew install xcodegen        # 或 mint / 下载 release 二进制
+#     xcodegen generate            # 生成 HerInfo.xcodeproj
+#     open HerInfo.xcodeproj
+# ============================================================
+
+name: HerInfo
+
+options:
+  deploymentTarget:
+    iOS: "17.0"          # SwiftData 与自定义 Layout 的门槛；降到 16 要换回 Core Data
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # 刻意留在 Swift 5 语言模式。Swift 6 会把「严格并发」从警告升级成错误，
+    # 而骨架里那几处 delegate 回调正是靠警告先暴露出来的 ——
+    # 先拿到一份能编译的结果，再逐条决定怎么修（见编译预检清单第 3.1 节）。
+    # 想主动复现那些并发问题：把这里改成 "6.0" 再编译。
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+    # 设计稿是 375×812 的 iPhone 竖屏（1 = iPhone）。没有做过 iPad 适配。
+    TARGETED_DEVICE_FAMILY: "1"
+
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+
+  # ----------------------------------------------------------
+  #  主 App
+  # ----------------------------------------------------------
+  HerInfo:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+
+    sources:
+      - path: HerInfo
+        excludes:
+          # 这两个文件各自通过 build setting 引用（INFOPLIST_FILE /
+          # CODE_SIGN_ENTITLEMENTS），不能再当资源打包进 bundle 里。
+          - "Info.plist"
+          - "HerInfo.entitlements"
+          # 契约不跟着文件夹走，它在下面单独列出 ——
+          # 因为它同时属于两个 target，见下一个 sources 条目。
+          - "Shared/NotificationContract.swift"
+      # 契约：与下面的扩展 target 引用的是**同一个文件**。
+      # 这是「跨进程共享」在工程层面的全部含义：
+      # 同一个源文件，出现在两个 target 的 Compile Sources 里。
+      - path: HerInfo/Shared/NotificationContract.swift
+
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.herinfo.app
+        INFOPLIST_FILE: HerInfo/Info.plist
+        CODE_SIGN_ENTITLEMENTS: HerInfo/HerInfo.entitlements
+        # 样板键（CFBundleIdentifier / CFBundleExecutable / 版本号 …）
+        # 由 Xcode 自动补进上面那个文件。只在 Xcode 13 以上有效，
+        # 而 iOS 17 的最低门槛本来就要求 Xcode 15，所以没有兼容问题。
+        GENERATE_INFOPLIST_FILE: YES
+
+    dependencies:
+      # 扩展必须被「嵌入」进主 App 的 PlugIns 目录，光编译不算数。
+      # embed + codeSign 是两件事：前者决定它在不在包里，
+      # 后者决定它能不能在真机上被系统加载。
+      - target: HerInfoNotification
+        embed: true
+        codeSign: true
+
+  # ----------------------------------------------------------
+  #  通知内容扩展（画布 36 屏）
+  # ----------------------------------------------------------
+  HerInfoNotification:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+
+    sources:
+      - path: HerInfoNotification
+        excludes:
+          - "Info.plist"
+          - "HerInfoNotification.entitlements"
+      # ↓↓↓ 这是这份文件存在的最大理由 ↓↓↓
+      # 契约同时属于两个 target —— README 第 5 步第 2 条要求「手动勾进
+      # 两个 target 的 Compile Sources」，手工做一定会有人漏。
+      # 写在这里，两个 target 共用同一个文件，物理上无法只勾一个。
+      - path: HerInfo/Shared/NotificationContract.swift
+
+    settings:
+      base:
+        # App 扩展的 bundle id 必须以宿主 App 的 bundle id 为前缀，
+        # 否则校验期直接拒绝，或者更糟：能编译但装不上。
+        PRODUCT_BUNDLE_IDENTIFIER: com.herinfo.app.notification
+        INFOPLIST_FILE: HerInfoNotification/Info.plist
+        CODE_SIGN_ENTITLEMENTS: HerInfoNotification/HerInfoNotification.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES      # 扩展不单独产出安装包，它只跟着主 App 走
+
+schemes:
+  HerInfo:
+    build:
+      targets:
+        HerInfo: all
+    run:
+      config: Debug
+    archive:
+      config: Release

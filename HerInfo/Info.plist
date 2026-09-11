@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    主 App 的 Info.plist（部分键）。
+
+    【这个文件为什么只有五个键】
+    工程用 GENERATE_INFOPLIST_FILE = YES，Xcode 会把样板键
+    （CFBundleIdentifier / CFBundleExecutable / CFBundlePackageType …）
+    自动补进来，我们只写「Xcode 猜不到、且猜错了不报错」的那几条。
+
+    【下面四条都不能省，而且省了都不会报错】
+    前两条是权限用途说明：iOS 申请权限时必须已经有这条字符串，
+    没有的话系统直接静默拒绝 —— 用户看不到弹窗，你也看不到错误，
+    只会在日志里看到一次 «This app has crashed because it attempted to access
+    privacy-sensitive data without a usage description» 之后就没了。
+-->
+<plist version="1.0">
+<dict>
+	<!-- 显示名用中文，但 PRODUCT_NAME 保持 ASCII（HerInfo）——
+	     因为 PRODUCT_MODULE_NAME 会从 PRODUCT_NAME 推导，
+	     而 Swift 的模块名必须是 ASCII 标识符。
+	     扩展的 NSExtensionPrincipalClass 写作
+	     $(PRODUCT_MODULE_NAME).NotificationViewController，
+	     模块名一旦被改成中文，那一行就解析不出类，扩展静默不加载。 -->
+	<key>CFBundleDisplayName</key>
+	<string>她的信息本</string>
+
+	<!-- ① 地理围栏（ReminderService）要的用途说明。
+	        没有它：区域监听注册不上去，场景提醒永远不响。 -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>到你常去的地方时，提醒你记过的事</string>
+
+	<!-- ② 应用锁（13 屏）要的用途说明。
+	        没有它：LAContext 求值直接失败，应用锁变成打不开的门。 -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>用来锁住她的信息，只有你能打开</string>
+
+	<!-- ③ 让「她的信息本」出现在系统「文件」App 里（35 屏导出的落点）。
+	        这一条是「被看见」的开关，不是「能写文件」的开关 ——
+	        沙盒里写文件本来就可以，写完了看不见而已。 -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+
+	<!-- ④ 允许「文件」App 就地打开而不是每次拷一份副本。
+	        与上一条成对出现：只开 ③ 不开 ④，用户每次打开都会多出一个副本。 -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+
+	<!-- SwiftUI App 生命周期仍然需要一个启动屏声明。
+	        给空字典即表示「就是纯色启动屏」；完全没有这个键的表现是
+	        整个 App 被letterbox 成一圈黑边 —— 分辨率不匹配，但不报错。 -->
+	<key>UILaunchScreen</key>
+	<dict/>
+
+	<!-- 设计稿是 375×812 的竖屏，横屏没有做过适配。
+	        只声明竖屏 = 横过来时系统不旋转，而不是旋出一个没设计过的版式。 -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>

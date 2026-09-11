@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    通知内容扩展的 Info.plist
+    照抄进 target 时，只有 NSExtensionAttributes 这一段是有信息量的，
+    其余是 Xcode 的样板。
+
+    【四个键都不能省，其中两个省了会「看起来正常但其实没生效」】
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>她的信息本通知</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+
+	<!--
+	    ⑤ 扩展的包类型必须是 XPC!（带感叹号）。
+	       少了这一条的失败方式是最彻底的：系统不把这个 bundle 认成扩展，
+	       于是「通知能弹、长按展开永远是系统默认样子」，连扩展进程都不会起来。
+	       在 Xcode 里手动建 target 时它是自动写上的，所以这条最容易在
+	       「照抄 Info.plist」时丢掉。
+	-->
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
+
+	<key>NSExtension</key>
+	<dict>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.usernotifications.content-extension</string>
+
+		<!-- 没有 storyboard，直接由类名实例化 -->
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).NotificationViewController</string>
+
+		<key>NSExtensionAttributes</key>
+		<dict>
+			<!--
+			    ① 只有这个分类的通知才会走扩展。
+			       必须与 HINotify.reminderCategory 逐字一致。
+			       不一致的表现：通知照常弹，但长按展开是系统默认样子 ——
+			       不报错、不崩溃，只是白做。
+			-->
+			<key>UNNotificationExtensionCategory</key>
+			<string>HI_REMIND</string>
+
+			<!--
+			    ② false = 标题与正文仍由系统画（画布 14 屏的样子因此白拿）。
+			       扩展只画系统画不出来的部分：配图 / 元信息 / 快捷打标。
+			       设成 true 就要自己重画标题正文，字号与间距会与系统差一点点，
+			       而那种「差一点点」在锁屏上是看得出来的。
+			-->
+			<key>UNNotificationExtensionDefaultContentHidden</key>
+			<false/>
+
+			<!--
+			    ③ 收起态下扩展视图的高度参考值。取 0.12 是因为收起态我们
+			       什么都不画（见 NotificationContentView 的 else 分支），
+			       留一丝高度只为了避免系统给 0 高时的布局告警。
+			       这个值**不控制展开高度** —— 展开后的高度由系统按内容给。
+			-->
+			<key>UNNotificationExtensionInitialContentSizeRatio</key>
+			<real>0.12</real>
+
+			<!--
+			    ④ 少了这一条，五个打标胶囊**点不动**。
+			       默认是 false（扩展视图只做展示、点击一律算「打开 App」），
+			       这是最容易漏、也最难查的一条：视图画得好好的，就是按不下去。
+			-->
+			<key>UNNotificationExtensionUserInteractionEnabled</key>
+			<true/>
+		</dict>
+	</dict>
+</dict>
+</plist>

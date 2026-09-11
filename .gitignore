@@ -1,0 +1,13 @@
+# 由 XcodeGen 生成，不入库 —— project.yml 才是真相。
+# 想改工程结构，改 project.yml 再跑 `xcodegen generate`。
+*.xcodeproj
+*.xcworkspace
+
+# 构建产物
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+
+# macOS
+.DS_Store

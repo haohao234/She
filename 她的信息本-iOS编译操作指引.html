@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>她的信息本 · 编译操作指引 v1.0</title>
+<style>
+  :root{
+    --bg:#F8F5F0; --card:#FFFFFF; --line:#EFE8E0; --line2:#EAE2D8; --sep:#F1EAE2;
+    --t1:#1F1E1B; --t2:#5C5A55; --t3:#948C82;
+    --brand:#C0614A; --brand-soft:#FAEDE6; --brand-hi:#F7E0D6; --brand-text:#B0523C;
+    --ok:#7C9070; --ok-soft:#EEF2EA; --warn:#B4874A; --warn-soft:#FBF3E6;
+    --alt:#6C7C8C; --alt-soft:#EDF0F3;
+    --code-bg:#26221F; --code-fg:#EFE9E3; --code-dim:#9C938B; --code-green:#A8BF98; --code-amber:#D2A96B;
+    --r-s:12px; --r-m:16px; --r-l:22px; --r-xl:28px;
+    --shadow:0 2px 10px rgba(80,62,50,.06), 0 12px 32px rgba(80,62,50,.05);
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--t1);
+    font-family:"Noto Sans SC","PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+    font-size:14px; line-height:1.75; letter-spacing:.01em;
+    padding:0 0 96px;
+  }
+  .wrap{max-width:880px; margin:0 auto; padding:0 28px}
+  .mono,code,pre{font-family:"JetBrains Mono",Consolas,Menlo,"Courier New",monospace}
+
+  /* ── 头部 ───────────────────────── */
+  header{padding:56px 0 32px}
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:7px;
+    font-size:11px; font-weight:500; letter-spacing:.08em; color:var(--brand-text);
+    background:var(--brand-soft); border-radius:100px; padding:5px 12px; margin-bottom:18px;
+  }
+  .eyebrow i{width:5px; height:5px; border-radius:100px; background:var(--brand)}
+  h1{margin:0 0 12px; font-size:31px; font-weight:600; letter-spacing:-.02em; line-height:1.3}
+  .sub{margin:0; color:var(--t2); font-size:15px; max-width:64ch}
+  .sub b{color:var(--t1); font-weight:500}
+
+  /* ── 通用卡 ─────────────────────── */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:var(--r-l); padding:24px 26px; box-shadow:var(--shadow)}
+  .card + .card{margin-top:16px}
+  h2{font-size:19px; font-weight:600; margin:44px 0 16px; letter-spacing:-.01em; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+  h2 .n{
+    font-family:"JetBrains Mono",monospace; font-size:11px; font-weight:500;
+    letter-spacing:.06em; color:var(--brand-text);
+    background:var(--brand-soft); border-radius:100px; padding:3px 10px; white-space:nowrap;
+  }
+  h3{font-size:15px; font-weight:600; margin:0 0 10px}
+  p{margin:0 0 12px}
+  p:last-child{margin-bottom:0}
+  .dim{color:var(--t2)}
+  .tiny{font-size:12px; color:var(--t3); line-height:1.7}
+  .hr{height:1px; background:var(--sep); margin:18px 0}
+
+  /* ── 状态清单 ───────────────────── */
+  .done{display:flex; align-items:flex-start; gap:11px; padding:9px 0}
+  .done + .done{border-top:1px solid var(--sep)}
+  .tick{
+    flex:0 0 auto; width:19px; height:19px; border-radius:100px; margin-top:3px;
+    background:var(--ok-soft); color:var(--ok); display:flex; align-items:center; justify-content:center;
+    font-size:11px; font-weight:700;
+  }
+  .done .tx{flex:1; min-width:0}
+  .done .tx b{font-weight:500; font-size:13.5px}
+  .done .tx small{display:block; color:var(--t3); font-size:12px; line-height:1.6}
+
+  /* ── 进度条 ─────────────────────── */
+  .prog{display:flex; align-items:center; gap:14px; margin:22px 0 6px}
+  .bar{flex:1; height:5px; border-radius:100px; background:var(--line2); overflow:hidden}
+  .bar i{display:block; height:100%; width:0; background:var(--brand); border-radius:100px; transition:width .35s ease}
+  .prog span{font-size:12px; color:var(--t3); font-variant-numeric:tabular-nums; white-space:nowrap}
+
+  /* ── 步骤 ───────────────────────── */
+  .step{position:relative; background:var(--card); border:1px solid var(--line); border-radius:var(--r-l); box-shadow:var(--shadow); margin-bottom:16px; overflow:hidden; transition:border-color .2s, opacity .2s}
+  .step.on{border-color:var(--brand-hi)}
+  .step.done-s{border-color:#DCE5D3}
+  .step-head{display:flex; align-items:flex-start; gap:14px; padding:22px 26px 0; cursor:pointer; user-select:none}
+  .num{
+    flex:0 0 auto; width:30px; height:30px; border-radius:100px; margin-top:1px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:"JetBrains Mono",monospace; font-size:13px; font-weight:600;
+    background:var(--brand-soft); color:var(--brand-text); transition:background .2s, color .2s;
+  }
+  .step.done-s .num{background:var(--ok-soft); color:var(--ok)}
+  .step-head .tt{flex:1; min-width:0}
+  .step-head .tt h3{margin-bottom:3px; display:flex; align-items:center; gap:9px; flex-wrap:wrap}
+  .step-head .tt p{margin:0; font-size:13px; color:var(--t2)}
+  .chk{flex:0 0 auto; margin-top:3px}
+  .chk input{width:17px; height:17px; accent-color:var(--brand); cursor:pointer; margin:0; display:block}
+  .body{padding:18px 26px 24px 70px}
+  @media (max-width:640px){
+    .wrap{padding:0 16px} header{padding:34px 0 22px} h1{font-size:25px}
+    .card{padding:20px} .step-head{padding:18px 18px 0} .body{padding:16px 18px 20px}
+  }
+
+  /* ── 代码块 ─────────────────────── */
+  .codewrap{position:relative; margin:14px 0}
+  pre{
+    margin:0; background:var(--code-bg); color:var(--code-fg);
+    border-radius:var(--r-m); padding:15px 74px 15px 17px;
+    font-size:12.5px; line-height:1.85; overflow-x:auto; white-space:pre;
+  }
+  pre .c{color:var(--code-dim)}      /* 注释 */
+  pre .g{color:var(--code-green)}    /* 命令 */
+  pre .a{color:var(--code-amber)}    /* 参数/强调 */
+  .cp{
+    position:absolute; top:11px; right:11px;
+    border:0; border-radius:100px; padding:5px 12px; cursor:pointer;
+    font-family:inherit; font-size:11px; font-weight:500;
+    background:rgba(255,255,255,.13); color:rgba(255,255,255,.82);
+    transition:background .15s, color .15s;
+  }
+  .cp:hover{background:rgba(255,255,255,.24)}
+  .cp.ok{background:var(--ok); color:#fff}
+  p code, li code, td code{
+    background:var(--sep); border-radius:6px; padding:1.5px 6px;
+    font-size:12.5px; color:var(--brand-text);
+  }
+
+  /* ── 提示条 ─────────────────────── */
+  .note{display:flex; gap:11px; border-radius:var(--r-m); padding:14px 16px; margin:14px 0 0; font-size:13px; line-height:1.72}
+  .note .ic{flex:0 0 auto; font-size:13px; line-height:1.6}
+  .note.tip{background:var(--brand-soft); color:#7A4534}
+  .note.warn{background:var(--warn-soft); color:#7A5A25}
+  .note.alt{background:var(--alt-soft); color:#4B5A66}
+  .note b{font-weight:600}
+  .note code{background:rgba(0,0,0,.06); color:inherit}
+
+  /* ── 表格 ───────────────────────── */
+  table{width:100%; border-collapse:collapse; font-size:13px; margin:14px 0 0}
+  th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--sep); vertical-align:top}
+  th{font-weight:500; color:var(--t3); font-size:11.5px; letter-spacing:.04em; text-transform:uppercase}
+  tr:last-child td{border-bottom:0}
+  td:first-child{white-space:nowrap; color:var(--t2)}
+
+  /* ── 成功/失败对照 ───────────────── */
+  .two{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:16px}
+  @media (max-width:640px){ .two{grid-template-columns:1fr} }
+  .box{border-radius:var(--r-m); padding:16px 18px; border:1px solid}
+  .box h4{margin:0 0 9px; font-size:13px; font-weight:600; display:flex; align-items:center; gap:7px}
+  .box.good{background:var(--ok-soft); border-color:#DCE5D3}
+  .box.good h4{color:#5A6B4F}
+  .box.bad{background:#FBEFEC; border-color:#F2DBD3}
+  .box.bad h4{color:#9C4A36}
+  .box ul{margin:0; padding-left:17px; font-size:12.5px; line-height:1.8; color:var(--t2)}
+  .box li + li{margin-top:3px}
+
+  /* ── 结尾 ───────────────────────── */
+  .end{margin-top:44px; padding:26px; border-radius:var(--r-l); background:var(--brand); color:#fff}
+  .end h2{color:#fff; margin:0 0 10px; font-size:19px}
+  .end p{color:rgba(255,255,255,.88); font-size:14px}
+  .end b{color:#fff}
+  .end code, .end .mono{
+    color:#fff; background:rgba(255,255,255,.17);
+    border-radius:6px; padding:1.5px 6px; font-size:12.5px;
+  }
+  footer{margin-top:36px; padding-top:20px; border-top:1px solid var(--line); font-size:11.5px; color:var(--t3); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow"><i></i>操作指引 · 四步拿到编译结果</div>
+    <h1>怎么让编译器说话</h1>
+    <p class="sub">
+      你的机器是 Windows，而 Xcode 只跑在 macOS 上 —— 这是 Apple 的硬件约束，绕不过去。
+      所以编译这件事交给云端的 macOS 机器做，只把<b>报错清单</b>带回来给我。
+      好消息是：<b>本地能做的部分我已经全部做完了</b>，你剩下四步。
+    </p>
+    <div class="prog">
+      <div class="bar"><i id="bar"></i></div>
+      <span id="ptext">0 / 4 已完成</span>
+    </div>
+  </header>
+
+  <!-- ══ 现状 ══ -->
+  <div class="card">
+    <h3>先看清楚：本地已经就绪的东西</h3>
+    <p class="tiny" style="margin-bottom:14px">这些不需要你动手，列出来是为了让你知道「推上去的就是这份状态」。</p>
+
+    <div class="done">
+      <div class="tick">✓</div>
+      <div class="tx"><b>本地 Git 仓库已建好</b><small><span class="mono">她的信息本-iOS/</span> 已 <span class="mono">git init</span>，分支 <span class="mono">main</span>，27 个文件已提交，工作区干净</small></div>
+    </div>
+    <div class="done">
+      <div class="tick">✓</div>
+      <div class="tx"><b>工程结构已声明化</b><small><span class="mono">project.yml</span> —— 两个 target、共享契约、App Groups 全在里面，不用手工建 target / 拖文件 / 勾 Compile Sources</small></div>
+    </div>
+    <div class="done">
+      <div class="tick">✓</div>
+      <div class="tx"><b>云端流水线已写好</b><small><span class="mono">.github/workflows/ios-build.yml</span> —— 只编译、不签名、不跑模拟器，并自动把 error / warning 摘成清单</small></div>
+    </div>
+    <div class="done">
+      <div class="tick">✓</div>
+      <div class="tx"><b>五份校验脚本全绿</b><small>原型 13 项 · 规范页 16 项 · 交接 9 项 · Swift 17 项 · 工程层全通过</small></div>
+    </div>
+    <div class="done">
+      <div class="tick">✓</div>
+      <div class="tx"><b>两份 Info.plist 的关键键已补齐</b><small>包括扩展缺了「连进程都不会起」的 <span class="mono">CFBundlePackageType</span>，和主 App 那份原本根本不存在的 plist</small></div>
+    </div>
+
+    <div class="note tip">
+      <span class="ic">▶</span>
+      <div>一句话：<b>代码、工程声明、流水线都是现成的。</b>你要做的只是「把它放到 GitHub 上，让云端的 Mac 编译一次」。</div>
+    </div>
+  </div>
+
+  <!-- ══ 步骤 1 ══ -->
+  <h2><span class="n">STEP 01</span> 建一个空的远程仓库</h2>
+  <div class="step" data-step="1">
+    <div class="step-head">
+      <div class="num">1</div>
+      <div class="tt">
+        <h3>在 GitHub 上新建仓库</h3>
+        <p>只需要点几下，30 秒</p>
+      </div>
+      <div class="chk"><input type="checkbox" aria-label="第 1 步完成"></div>
+    </div>
+    <div class="body">
+      <p>打开 <b>github.com/new</b>（没有账号就先注册，三分钟）。填两处：</p>
+
+      <table>
+        <tr><td>Repository name</td><td><b>纯 ASCII，例如 <span class="mono">herinfo-ios</span></b><br><span class="tiny">别用中文。路径里的非 ASCII 字符会让后面 xcodebuild 的报错行更难解析</span></td></tr>
+        <tr><td>Visibility</td><td><b>Private</b>（推荐）<br><span class="tiny">私有仓库每月有 2000 分钟额度，macOS 机器按 10 倍计费 → 约 200 分钟，够跑 40 次左右。这个项目是私事，不值得为省额度公开</span></td></tr>
+      </table>
+
+      <div class="note warn">
+        <span class="ic">⚠</span>
+        <div>
+          <b>三个勾全部不要勾</b> —— <span class="mono">Add a README file</span>、<span class="mono">Add .gitignore</span>、<span class="mono">Choose a license</span>。
+          勾了远程仓库就会先有一个提交，本地又没有，push 时会被直接拒绝（报 <span class="mono">non-fast-forward</span>）。
+          我们要的是一个<b>完完全全的空仓库</b>。
+        </div>
+      </div>
+
+      <p class="tiny" style="margin-top:14px">建好后页面会给你一段示例命令，<b>不用照着做</b> —— 下一步的命令是给它准备好的。</p>
+    </div>
+  </div>
+
+  <!-- ══ 步骤 2 ══ -->
+  <h2><span class="n">STEP 02</span> 把代码推上去</h2>
+  <div class="step" data-step="2">
+    <div class="step-head">
+      <div class="num">2</div>
+      <div class="tt">
+        <h3>关联远程并推送</h3>
+        <p>两条命令，复制粘贴到 Git Bash</p>
+      </div>
+      <div class="chk"><input type="checkbox" aria-label="第 2 步完成"></div>
+    </div>
+    <div class="body">
+      <p>打开 <b>Git Bash</b>（开始菜单搜「Git Bash」），粘贴下面两行。第一行里的 URL 换成你刚建的那个仓库地址。</p>
+
+      <div class="codewrap">
+        <button class="cp" data-copy="cmd2">复制</button>
+<pre id="cmd2"><span class="c"># ① 进入仓库目录（本地仓库已经建好，不需要再 init）</span>
+<span class="g">cd</span> <span class="a">"D:/workbwenjian/2026-09-10-14-54-12/她的信息本-iOS"</span>
+
+<span class="c"># ② 关联远程仓库 —— 把 URL 换成你自己的</span>
+<span class="g">git remote add origin</span> <span class="a">https://github.com/你的用户名/herinfo-ios.git</span>
+
+<span class="c"># ③ 推上去</span>
+<span class="g">git push -u origin main</span></pre>
+      </div>
+
+      <div class="note warn">
+        <span class="ic">⚠</span>
+        <div>
+          <b>仓库根目录必须是 <span class="mono">她的信息本-iOS/</span> 本身，不能是它的上一层。</b>
+          如果你把整个工作区推上去，<span class="mono">.github/workflows/</span> 就不在仓库根目录了 ——
+           Actions 会<b>毫无反应</b>，而且不报任何错，它只是「没找到工作流」。这是最容易踩的坑。
+        </div>
+      </div>
+
+      <div class="note tip">
+        <span class="ic">▸</span>
+        <div>
+          <b>首次 push 会弹窗要你登录 GitHub</b>（Git Credential Manager，浏览器授权一下就行）。
+          万一弹的是「用户名 / 密码」框：<b>GitHub 早就不收密码了</b>，
+          密码栏要填 <b>Personal Access Token</b>（github.com/settings/tokens 新建，勾 <span class="mono">repo</span> 权限）。
+        </div>
+      </div>
+
+      <p class="tiny" style="margin-top:14px">
+        设计稿不用推 —— 流水线只编译 <span class="mono">她的信息本-iOS/</span> 这一份目录。
+      </p>
+    </div>
+  </div>
+
+  <!-- ══ 步骤 3 ══ -->
+  <h2><span class="n">STEP 03</span> 等云端的 Mac 编译完</h2>
+  <div class="step" data-step="3">
+    <div class="step-head">
+      <div class="num">3</div>
+      <div class="tt">
+        <h3>看 Actions 面板</h3>
+        <p>推上去之后它会自己开始，3–5 分钟</p>
+      </div>
+      <div class="chk"><input type="checkbox" aria-label="第 3 步完成"></div>
+    </div>
+    <div class="body">
+      <p>
+        回到你的仓库网页，点顶部 <b>Actions</b> 标签。会看到一条叫
+        <b>「iOS 编译检查」</b>的运行记录 —— 名字前面有个小黄点表示正在跑，转圈变绿或变红就结束了。
+      </p>
+
+      <div class="two">
+        <div class="box good">
+          <h4>✓ 绿了</h4>
+          <ul>
+            <li>说明 <b>0 error</b>，骨架能编译</li>
+            <li>点进去看「摘出错误与警告」那一步，会列出若干 warning</li>
+            <li><b>把 warning 也贴回来</b> —— 它们多半就是预检清单第 3 节那三类</li>
+          </ul>
+        </div>
+        <div class="box bad">
+          <h4>✕ 红了</h4>
+          <ul>
+            <li><b>这正是我们要的结果</b> —— 它换来了一份真实报错清单</li>
+            <li>点进失败的运行，展开 <b>「摘出错误与警告」</b>那一步</li>
+            <li>那一步不会因为是失败就不跑，它是专门为此写的</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="note alt">
+        <span class="ic">◦</span>
+        <div>
+          几个可能让你以为「没跑」的情况：<b>推送后要等几秒</b> Actions 页面才出现记录；
+          <b>免费机器可能要排队</b>，显示 <span class="mono">Queued</span> 是正常的；
+          想重跑不用改代码 —— 页面右上角 <span class="mono">Re-run all jobs</span>，
+          或左侧 <span class="mono">iOS 编译检查</span> → <span class="mono">Run workflow</span> 手动触发。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 步骤 4 ══ -->
+  <h2><span class="n">STEP 04</span> 把报错贴回来给我</h2>
+  <div class="step" data-step="4">
+    <div class="step-head">
+      <div class="num">4</div>
+      <div class="tt">
+        <h3>复制那两段，扔进对话里</h3>
+        <p>不用整理，原始输出就行</p>
+      </div>
+      <div class="chk"><input type="checkbox" aria-label="第 4 步完成"></div>
+    </div>
+    <div class="body">
+      <p>只要「摘出错误与警告」那一步的两段内容，长这样：</p>
+
+      <div class="codewrap">
+        <button class="cp" data-copy="sample">复制</button>
+<pre id="sample"><span class="c">==========================================</span>
+<span class="c"> 错误（error）</span>
+<span class="c">==========================================</span>
+<span class="c"># 真实输出里这行开头是完整路径
+#   /Users/runner/work/herinfo-ios/herinfo-ios/  ← 这一段，这里简写了</span>
+.../HerInfo/Features/HomeView.swift:142:23: error: cannot find 'xxx' in scope
+.../HerInfo/Services/ReminderService.swift:88:9: error: value of type ...
+
+<span class="c">==========================================</span>
+<span class="c"> 警告（warning）</span>
+<span class="c">==========================================</span>
+.../HerInfo/Features/EditorView.swift:61:5: warning: main actor-isolated ...
+
+<span class="c">------------------------------------------</span>
+error 总数：2
+warning 总数：11</pre>
+      </div>
+
+      <table>
+        <tr><td>要贴的</td><td>整个 <span class="mono">error</span> / <span class="mono">warning</span> 段落，<b>保留 <span class="mono">文件:行:列</span> 那一段</b></td></tr>
+        <tr><td>更值钱的</td><td><span class="mono">note:</span> 补充行 —— Swift 的类型推断与并发报错<b>全靠 note 定位</b>，它比 error 行本身更有用</td></tr>
+        <tr><td>不用贴</td><td>3000 行完整构建日志。真需要我会让你下载 artifact（流水线保留了 14 天）</td></tr>
+      </table>
+
+      <div class="note tip">
+        <span class="ic">▸</span>
+        <div>
+          <b>然后我做什么。</b>按行改 → 重跑 <span class="mono">check-swift.js</span>（17 项）+
+          <span class="mono">check-project.py</span> 保证不回归 → 你再推一次。
+          如果报错落在预检清单第 3 节的三类之外，那是真错误，同时也说明我的静态判据漏了一类 ——
+          我会把新判据补进脚本，让下一轮不用再靠人眼通读 5524 行。
+          <b>只出现那三类的话，通常一轮就收敛。</b>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 备选 ══ -->
+  <h2><span class="n">PLAN B</span> 如果 GitHub 打不开</h2>
+  <div class="card">
+    <p class="dim">
+      GitHub 在国内时快时慢。如果你连仓库都建不上、或者 <span class="mono">git push</span> 一直超时，
+      别在这上面耗 —— 换下面任一条。
+    </p>
+
+    <table>
+      <tr>
+        <td>走代理</td>
+        <td>如果你本机有代理，给 Git 单独配一次即可：<br>
+        <span class="mono">git config --global http.proxy http://127.0.0.1:端口</span><br>
+        <span class="tiny">和你平时浏览器用的那个端口一致</span></td>
+      </tr>
+      <tr>
+        <td>Codemagic</td>
+        <td>专做移动端的云 CI，注册后可以<b>直接上传项目压缩包</b>，不一定要走 GitHub。免费额度 500 分钟/月。
+        <span class="tiny">代价是要在它那边重新配一次构建命令 —— 需要的话我来写它的配置文件。</span></td>
+      </tr>
+      <tr>
+        <td>找一台 Mac</td>
+        <td>借朋友的、或租一台云 Mac（按小时计费）。<br>
+        在这台 Windows 上装 macOS 是违反 Apple 许可协议的，而且极不稳定 —— <b>我不建议把项目押在这上面</b>。</td>
+      </tr>
+    </table>
+
+    <div class="note alt">
+      <span class="ic">◦</span>
+      <div>
+        注意：Gitee（码云）虽然国内快，但它的流水线<b>不提供 macOS 机器</b>，
+        所以想省掉 Mac 这件事上它帮不上忙。
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ 之后 ══ -->
+  <h2><span class="n">AFTER</span> 编译过了之后</h2>
+  <div class="card">
+    <p>编译通过只是个门槛，过了之后还有三件事，按优先级：</p>
+    <table>
+      <tr><td>1</td><td><b>在模拟器里跑一次主流程</b><br><span class="tiny">预检清单第 6 节列了必过的 5 条 —— 添加记录、分类浏览、搜索、设置链、导出。</span></td></tr>
+      <tr><td>2</td><td><b>真机验那两条跨进程验收</b><br><span class="tiny">第 13 条「通知长按展开」和第 14 条「锁屏打标」—— 这是整套交付里唯一跨进程的部分，失败方式很安静，值得单独花时间。</span></td></tr>
+      <tr><td>3</td><td><b>铺开剩下 13 屏</b><br><span class="tiny">它们用的是已经在 Components.swift 里的组件，属于同一模式的重复劳动，不是新判断。</span></td></tr>
+    </table>
+  </div>
+
+  <div class="end">
+    <h2>总结成一句话</h2>
+    <p>
+      建一个空仓库（<b>三个勾都别勾</b>）→ 在 <span class="mono">她的信息本-iOS</span> 目录里
+      <b>git remote add</b> 再 <b>git push</b> → 等 Actions 跑完 →
+      把 error / warning 两段贴回来。
+    </p>
+    <p style="margin-bottom:0">卡在任何一步，把屏幕上的字贴给我就行。</p>
+  </div>
+
+  <footer>
+    <span>她的信息本 · iOS 编译操作指引 v1.0</span>
+    <span>配套：编译预检清单 · 开发交接文档 · project.yml</span>
+  </footer>
+
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* ── 复制按钮 ───────────────────── */
+  function copyText(text){
+    if(navigator.clipboard && window.isSecureContext){
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function(res, rej){
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); res(); } catch(e){ rej(e); }
+      document.body.removeChild(ta);
+    });
+  }
+
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('.cp');
+    if(!btn) return;
+    var pre = document.getElementById(btn.dataset.copy);
+    if(!pre) return;
+    copyText(pre.innerText).then(function(){
+      var old = btn.textContent;
+      btn.textContent = '已复制';
+      btn.classList.add('ok');
+      setTimeout(function(){
+        btn.textContent = old;
+        btn.classList.remove('ok');
+      }, 1400);
+    }).catch(function(){
+      btn.textContent = '请手动选中';
+      setTimeout(function(){ btn.textContent = '复制'; }, 1600);
+    });
+  });
+
+  /* ── 步骤勾选 ───────────────────── */
+  var KEY = 'herinfo-ios-build-steps';
+  var steps = Array.prototype.slice.call(document.querySelectorAll('.step'));
+
+  function load(){
+    try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch(err){ return {}; }
+  }
+  function save(state){
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch(err){}
+  }
+  function paint(){
+    var state = load(), n = 0;
+    steps.forEach(function(s){
+      var box = s.querySelector('.chk input');
+      var on = !!state[s.dataset.step];
+      if(box) box.checked = on;
+      s.classList.toggle('done-s', on);
+      s.classList.toggle('on', !on);
+      if(on) n++;
+    });
+    var pct = steps.length ? Math.round(n / steps.length * 100) : 0;
+    var bar = document.getElementById('bar');
+    var txt = document.getElementById('ptext');
+    if(bar) bar.style.width = pct + '%';
+    if(txt) txt.textContent = n + ' / ' + steps.length + ' 已完成' + (n === steps.length ? ' · 就等编译结果了' : '');
+  }
+
+  document.addEventListener('change', function(e){
+    var box = e.target;
+    if(!box.matches || !box.matches('.chk input')) return;
+    var step = box.closest('.step');
+    if(!step) return;
+    var state = load();
+    if(box.checked){ state[step.dataset.step] = 1; } else { delete state[step.dataset.step]; }
+    save(state);
+    paint();
+  });
+
+  /* 点标题行也能切换（但别和勾选框打架） */
+  document.addEventListener('click', function(e){
+    var head = e.target.closest('.step-head');
+    if(!head || e.target.closest('.chk')) return;
+    var box = head.parentElement.querySelector('.chk input');
+    if(box){ box.checked = !box.checked; box.dispatchEvent(new Event('change', {bubbles:true})); }
+  });
+
+  paint();
+})();
+</script>
+</body>
+</html>

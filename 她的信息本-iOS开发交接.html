@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>她的信息本 · iOS 开发交接 v1.2</title>
+<style>
+/* ============================================================
+   她的信息本 · iOS 开发交接
+   与设计规范页共用同一套 16 个令牌 —— 交接文档本身也应该是
+   「一份照着这套令牌排出来的东西」，这样工程师第一眼就知道
+   令牌够用，不用再发明新颜色。
+   ============================================================ */
+
+:root,[data-theme="light"]{
+  --bg:#F8F5F0; --card:#FFFFFF; --primary:#C0614A; --ink:#1F1E1B;
+  --ink2:#5C5A55; --ink3:#948C82; --line:#EFE8E0; --line2:#EAE2D8;
+  --warm:#FAEDE6; --sand:#F7F0E1; --moss:#EDF1E7; --mist:#ECF0F3;
+  --brown:#B4874A; --green:#7C9070; --blue:#6C7C8C; --fill:#F1EAE2;
+  --code:#2E2823; --codebg:#F5F0EA;
+}
+[data-theme="dark"]{
+  --bg:#1A1613; --card:#241F1B; --primary:#D37C63; --ink:#F3EEE8;
+  --ink2:#BCB2A8; --ink3:#9A9187; --line:#342D27; --line2:#2E2823;
+  --warm:#3A2621; --sand:#352D1E; --moss:#232C20; --mist:#212930;
+  --brown:#C79A5C; --green:#8FA681; --blue:#8397A8; --fill:#2E2823;
+  --code:#EDE6DE; --codebg:#2A241F;
+}
+.demo-danger{--danger:#B0523C}
+[data-theme="dark"] .demo-danger{--danger:#D98672}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:'Noto Sans SC','PingFang SC','Microsoft YaHei',system-ui,sans-serif;
+  font-size:13.5px;line-height:22px;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  transition:background .25s ease,color .25s ease;
+}
+code,kbd,pre,.mono{font-family:'Inter',ui-monospace,'SF Mono',Consolas,monospace}
+
+/* ---------- 顶栏 ---------- */
+.topbar{
+  position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:14px;
+  padding:13px 26px;background:var(--bg);border-bottom:1px solid var(--line);
+  transition:background .25s ease,border-color .25s ease;
+}
+.brand{width:34px;height:34px;border-radius:11px;flex:0 0 auto;display:flex;
+  align-items:center;justify-content:center;
+  background:linear-gradient(135deg,#D4826B,#B14A34);
+  box-shadow:0 6px 16px -6px rgba(192,97,74,.7)}
+.topbar h1{font-size:15px;font-weight:600;margin:0;line-height:20px}
+.topbar .sub{font-size:11px;line-height:16px;color:var(--ink3);margin-top:2px}
+.grow{flex:1}
+.btn-t{
+  font-size:12px;line-height:18px;padding:7px 13px;border-radius:100px;cursor:pointer;
+  background:var(--card);border:1px solid var(--line2);color:var(--ink2);
+  transition:.16s;white-space:nowrap;user-select:none;
+}
+.btn-t:hover{border-color:var(--primary);color:var(--primary)}
+.btn-t.on{background:var(--primary);border-color:var(--primary);color:#fff}
+
+/* ---------- 布局 ---------- */
+.wrap{max-width:1180px;margin:0 auto;padding:0 26px 90px}
+.hero{padding:52px 0 30px;border-bottom:1px solid var(--line)}
+.eyebrow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--primary);font-weight:500}
+.hero h2{font-size:32px;line-height:42px;font-weight:600;margin:10px 0 12px;letter-spacing:-.01em}
+.hero p{font-size:14.5px;line-height:25px;color:var(--ink2);max-width:730px;margin:0}
+.hero .tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:20px}
+.tag-x{font-size:11px;line-height:16px;padding:4px 10px;border-radius:100px;
+  background:var(--fill);color:var(--ink2)}
+.tag-x.p{background:var(--warm);color:var(--primary)}
+.tag-x.g{background:var(--moss);color:var(--green)}
+.tag-x.b{background:var(--mist);color:var(--blue)}
+
+section{padding-top:54px;scroll-margin-top:70px}
+section>h2{font-size:22px;line-height:30px;font-weight:600;margin:0 0 10px}
+section>p.lead{font-size:14px;line-height:24px;color:var(--ink2);max-width:760px;margin:0 0 8px}
+h3{font-size:16px;line-height:24px;font-weight:600;margin:34px 0 10px}
+h4{font-size:13.5px;line-height:20px;font-weight:600;margin:0 0 6px}
+
+/* ---------- 卡 ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;
+  transition:background .25s ease,border-color .25s ease}
+.card.pad{padding:18px 20px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2c{grid-template-columns:minmax(0,1fr) minmax(0,1.06fr)}
+@media (max-width:920px){.g2,.g3,.g2c{grid-template-columns:1fr}}
+
+.kv{display:flex;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:12.5px;line-height:20px}
+.kv:first-of-type{border-top:0}
+.kv b{flex:0 0 128px;font-weight:500;color:var(--ink3)}
+.kv span{flex:1;color:var(--ink2)}
+.kv span b{color:var(--ink);font-weight:500}
+.chead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+
+/* ---------- 代码 ---------- */
+.codebar{display:flex;align-items:center;gap:10px;margin:16px 0 -1px}
+.codebar .t{font-size:12px;line-height:18px;color:var(--ink3);font-weight:500}
+.copybtn{font-size:11px;line-height:16px;padding:5px 11px;border-radius:100px;cursor:pointer;
+  background:var(--card);border:1px solid var(--line2);color:var(--ink2);transition:.16s}
+.copybtn:hover{border-color:var(--primary);color:var(--primary)}
+pre{margin:0;background:var(--codebg);border:1px solid var(--line);border-radius:14px;
+  padding:16px 18px;overflow:auto;max-height:520px}
+pre code{font-size:12px;line-height:20px;color:var(--code);white-space:pre}
+.cm{color:var(--ink3);font-style:italic}
+.kw{color:var(--primary)}
+.st{color:var(--green)}
+
+/* ---------- 屏条目 ---------- */
+.scrlist{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.scrrow{
+  display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:14px;align-items:start;
+  background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;
+  transition:.16s;
+}
+.scrrow:hover{border-color:var(--primary)}
+.scrrow .no{
+  font-family:'Inter',monospace;font-size:15px;font-weight:600;color:var(--primary);
+  background:var(--warm);border-radius:10px;padding:5px 0;text-align:center;
+}
+.scrrow .nm{font-size:13.5px;font-weight:500;line-height:20px;color:var(--ink)}
+.scrrow .ds{font-size:12.5px;line-height:19px;color:var(--ink2);margin-top:4px}
+.scrrow .keys{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;max-width:220px}
+.key{font-size:10.5px;line-height:15px;padding:3px 8px;border-radius:100px;
+  background:var(--fill);color:var(--ink2);white-space:nowrap}
+.key.api{background:var(--mist);color:var(--blue)}
+.key.new{background:var(--warm);color:var(--primary)}
+/* 本轮新增的四屏高亮 */
+.scrrow.isnew{border-color:var(--primary);background:linear-gradient(0deg,var(--warm),var(--card) 60%)}
+
+/* ---------- 表格 ---------- */
+table{width:100%;border-collapse:collapse;margin-top:14px;font-size:12.5px}
+th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink3);font-weight:500}
+td:first-child{white-space:nowrap}
+tbody tr:hover{background:var(--fill)}
+.mono-s{font-family:'Inter',monospace;font-size:11.5px;color:var(--ink)}
+
+/* ---------- 提示块 ---------- */
+.callout{border-radius:14px;padding:14px 16px;font-size:12.5px;line-height:20px}
+.callout.warn{background:var(--warm);color:var(--ink2)}
+.callout.warn b{color:var(--primary)}
+.callout.ok{background:var(--moss);color:var(--ink2)}
+.callout.ok b{color:var(--green)}
+.callout.info{background:var(--mist);color:var(--ink2)}
+
+ul.tight{margin:8px 0 0;padding-left:20px}
+ul.tight li{font-size:12.5px;line-height:21px;color:var(--ink2);margin-bottom:5px}
+ul.tight li b{color:var(--ink);font-weight:500}
+
+/* ---------- 侧栏目录 ---------- */
+.toc{position:fixed;left:calc(50% - 590px - 172px);top:120px;width:158px;
+  display:flex;flex-direction:column;gap:1px;font-size:12px}
+.toc a{color:var(--ink3);text-decoration:none;padding:5px 10px;border-radius:8px;
+  border-left:2px solid transparent;transition:.15s;line-height:18px}
+.toc a:hover{color:var(--ink);background:var(--fill)}
+.toc a.on{color:var(--primary);border-left-color:var(--primary);background:var(--warm)}
+@media (max-width:1320px){.toc{display:none}}
+
+footer{border-top:1px solid var(--line);margin-top:60px;padding:26px 0;
+  font-size:12px;line-height:19px;color:var(--ink3)}
+
+#toast{position:fixed;left:50%;bottom:36px;transform:translate(-50%,20px);
+  background:#2E2823;color:#fff;font-size:12.5px;padding:11px 20px;border-radius:100px;
+  opacity:0;pointer-events:none;transition:.24s;z-index:99}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <svg width="17" height="17" viewBox="0 0 18 18"><path d="M9 15.2S2.6 11.4 2.6 7.1A3.4 3.4 0 0 1 9 5.2a3.4 3.4 0 0 1 6.4 1.9c0 4.3-6.4 8.1-6.4 8.1Z" fill="#fff"/></svg>
+  </div>
+  <div>
+    <h1>她的信息本 · iOS 开发交接</h1>
+    <div class="sub">画布 724287806706693 ｜ 37 屏 ｜ v1.2 · 2026.09.10</div>
+  </div>
+  <div class="grow"></div>
+  <a class="btn-t" href="../她的信息本-App设计稿/她的信息本-交互原型.html" target="_blank" style="text-decoration:none">↗ 交互原型</a>
+  <a class="btn-t" href="../她的信息本-App设计稿/她的信息本-设计规范.html" target="_blank" style="text-decoration:none">↗ 设计规范</a>
+  <div class="btn-t" id="btnTheme">◐ 深色预览</div>
+</div>
+
+<nav class="toc">
+  <a href="#overview">交接概览</a>
+  <a href="#stack">技术选型</a>
+  <a href="#tree">工程结构</a>
+  <a href="#tokens">令牌落地</a>
+  <a href="#screens">逐屏规格</a>
+  <a href="#api">系统能力映射</a>
+  <a href="#notify">通知与围栏</a>
+  <a href="#nsext">通知内容扩展</a>
+  <a href="#model">数据模型</a>
+  <a href="#redline">技术红线</a>
+  <a href="#todo">还差什么</a>
+  <a href="#accept">验收清单</a>
+</nav>
+
+<div class="wrap">
+
+<section id="overview" style="padding-top:44px">
+  <div class="eyebrow">Handoff</div>
+  <h2>交接概览</h2>
+  <p class="lead">
+    这份文档的作用是把「设计稿上的 37 屏」翻译成「iOS 工程师能直接开工的一套结论」。
+    它不替代设计规范页 —— <b>令牌、组件、数据模型的权威定义在规范页</b>，
+    这里只讲这些设计如何在 iOS 上落地，以及落地时会撞到的边界。
+  </p>
+
+  <div class="grid g3" style="margin-top:24px">
+    <div class="card pad">
+      <h4>四件交付物</h4>
+      <div class="kv"><b>画布设计稿</b><span>37 屏 PNG（00~36）</span></div>
+      <div class="kv"><b>交互原型</b><span>单文件 HTML · 29 步演示</span></div>
+      <div class="kv"><b>设计规范</b><span>令牌 / 组件 / 数据模型</span></div>
+      <div class="kv"><b>iOS 骨架</b><span>本文档 + <span class="mono-s">她的信息本-iOS/</span></span></div>
+    </div>
+    <div class="card pad">
+      <h4>一句话结论</h4>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0">
+        SwiftUI + SwiftData，<b>最低 iOS 17</b>，零第三方依赖。
+        数据全部落本机，没有账号也没有云同步 ——
+        这不是省事，这是这个产品的隐私承诺，取消它产品就没了意义。
+      </p>
+    </div>
+    <div class="card pad">
+      <h4>骨架覆盖到哪</h4>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0">
+        <b>主流程 01→02→03→04→05</b>、本轮新增的 <b>32/33/34/35</b>、
+        以及 <b>36 锁屏通知展开态</b>（含 <b>Notification Content Extension 独立 target</b>）
+        已写成真代码；设置链 <b>12→35 / 12→27 / 12→13→23</b> 也接上了。
+        其余 13 屏是同一模式的重复劳动，照写即可。
+      </p>
+    </div>
+  </div>
+
+  <div class="callout warn" style="margin-top:16px">
+    <b>先读这一条：</b>交接用的代码骨架<b>没有在 Xcode 里编译过</b>（编写环境没有 Xcode 与 iOS SDK）。
+    静态检查（括号配平、类型引用闭合、符号去重、路由落点、两份 plist 与跨文件契约一致性）全部通过，
+    但 <span class="mono-s">#Predicate</span> 宏的捕获限制、Swift 6 严格并发下的
+    <span class="mono-s">nonisolated</span> 标注、自定义 <span class="mono-s">Layout</span> 的边界情况，
+    这三类只有真机编译才能暴露。预计首次编译会有若干警告与少量错误，都在这三类里。
+    <br><br>
+    <b>拿到编译结果的成本已经压到最低：</b>工程结构由
+    <span class="mono-s">project.yml</span> 声明（不需要手工建 target），
+    并且配好了 GitHub Actions 流水线 —— <b>把目录推上去就能换回一份真实的报错清单，
+    不需要自己有一台 Mac</b>。详见「还差什么」那一节。
+  </div>
+</section>
+
+<section id="stack">
+  <div class="eyebrow">Stack</div>
+  <h2>技术选型</h2>
+  <p class="lead">每一条结论都附了理由，理由比结论更值得复核 —— 如果理由不成立，结论就该改。</p>
+
+  <table>
+    <thead><tr><th>选择</th><th>结论</th><th>为什么</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>UI 框架</td>
+        <td><b>SwiftUI</b></td>
+        <td>37 屏里绝大多数是「卡片 + 列表 + 表单」，没有复杂动画与自绘。SwiftUI 在这个形状上的开发速度是 UIKit 的两倍以上，而且深浅色、动态字体是免费的 —— 这个 App 两个都要。</td>
+      </tr>
+      <tr>
+        <td>数据层</td>
+        <td><b>SwiftData</b></td>
+        <td>模型只有 6 张表、关系简单、无多端同步需求。<span class="mono-s">@Query</span> 直接驱动列表，省掉一整层 ViewModel 样板。代价是最低版本锁到 iOS 17。</td>
+      </tr>
+      <tr>
+        <td>最低版本</td>
+        <td><b>iOS 17.0</b></td>
+        <td>SwiftData 与 <span class="mono-s">Layout</span> 协议的门槛。降到 16 要换回 Core Data，改动量约等于重写数据层 —— 除非产品明确要求覆盖 iOS 16 机型，否则不值得。</td>
+      </tr>
+      <tr>
+        <td>依赖</td>
+        <td><b>零第三方</b></td>
+        <td>不引任何包管理器。所有图标走 SF Symbols、字体用系统、导出用系统框架。少一个依赖就少一个「明年没人维护」的风险，这对一个要放很多年的私人工具尤其重要。</td>
+      </tr>
+      <tr>
+        <td>数据存放</td>
+        <td><b>纯本机</b></td>
+        <td>无账号、无云同步、无分析 SDK。图片只存沙盒 + 记 hash。这不只是技术选择 —— 它是 16 屏那句「不读取聊天记录」的同一件事。</td>
+      </tr>
+      <tr>
+        <td>并发</td>
+        <td><b>Swift 6 严格并发</b></td>
+        <td>数据层与 UI 都在 <span class="mono-s">@MainActor</span>；通知与定位的 delegate 标 <span class="mono-s">nonisolated</span> 后回调回主线程。数据量小，不需要后台上下文。</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="tree">
+  <div class="eyebrow">Structure</div>
+  <h2>工程结构</h2>
+  <p class="lead">
+    四层，依赖是单向的：<b>Features → DesignSystem → （无依赖）</b>，
+    <b>Features → Models → （无依赖）</b>，Services 被 Features 调用但不反向依赖。
+    任何一层往回指，后面就会变成一坨。
+  </p>
+
+  <div class="codebar">
+    <div class="t">她的信息本-iOS/</div>
+    <button class="copybtn" data-copy="tree">复制</button>
+  </div>
+<pre id="tree"><code>她的信息本-iOS/                    <span class="cm">// 仓库根目录</span>
+├─ project.yml                    <span class="cm">// 工程声明的唯一真相：两个 target / 共享契约 / App Groups 全在这里</span>
+├─ .github/workflows/
+│   └─ ios-build.yml              <span class="cm">// 云端编译 —— 没有 Mac 也能让真正的编译器说话</span>
+│
+├─ HerInfo/                       <span class="cm">// 主 App target</span>
+│   ├─ HerInfoApp.swift           <span class="cm">// 入口：建容器、写种子、重排提醒、回前台取打标收件箱</span>
+│   ├─ Info.plist                 <span class="cm">// 四条「少了不报错」的键：定位/FaceID 用途说明、文件可见、就地打开</span>
+│   ├─ HerInfo.entitlements       <span class="cm">// 只需要一条：App Group（打标收件箱）</span>
+│   ├─ Shared/
+│   │   └─ NotificationContract.swift <span class="cm">// 唯一契约：两个 target 的 Compile Sources 都有它</span>
+│   ├─ DesignSystem/
+│   │   ├─ Tokens.swift           <span class="cm">// 16 个令牌 × 浅深两档 + 字体 + 圆角 + 间距 + 投影</span>
+│   │   └─ Components.swift       <span class="cm">// 14 个组件：SCard / Pill / SoftSwitch / SegmentControl …</span>
+│   ├─ Models/
+│   │   └─ Models.swift           <span class="cm">// SwiftData：Record / Photo / Profile / Reminder / Mood / Revision</span>
+│   ├─ Features/
+│   │   ├─ HomeView.swift         <span class="cm">// RootView（4 tab 容器）+ 01 首页 + 04 搜索 + 05 提醒</span>
+│   │   ├─ BrowseView.swift       <span class="cm">// 02 分类浏览 + 25 排序置顶 + 31 记录详情</span>
+│   │   ├─ EditorView.swift       <span class="cm">// 03 新增记录 + 34 记录配图（同一个编辑器的两种态）</span>
+│   │   ├─ ReminderEditorView.swift <span class="cm">// 32 新建提醒</span>
+│   │   ├─ ProfileEditView.swift  <span class="cm">// 33 编辑她的档案</span>
+│   │   ├─ ExportView.swift       <span class="cm">// 35 导出档案</span>
+│   │   └─ SecondaryViews.swift   <span class="cm">// 17 / 12 / 23 / 13 / 27</span>
+│   └─ Services/
+│       ├─ ReminderService.swift  <span class="cm">// 本地通知 + 地理围栏（含 20 个区域上限）</span>
+│       └─ ExportService.swift    <span class="cm">// PDF / Markdown / JSON 三种真导出</span>
+│
+└─ HerInfoNotification/           <span class="cm">// 通知内容扩展：独立 target、独立进程、独立 Info.plist</span>
+    ├─ NotificationViewController.swift <span class="cm">// 入口：取通知、读系统搬来的附件、把点击转发给主 App</span>
+    ├─ NotificationContentView.swift    <span class="cm">// 36 屏展开态那三块：配图 / 元信息 / 五个等宽打标胶囊</span>
+    ├─ NotificationStyle.swift          <span class="cm">// 白阶透明度那一套；零 hex，色值全取自共享契约</span>
+    ├─ Info.plist                       <span class="cm">// 六个键逐个都要对（含 CFBundlePackageType = XPC!）</span>
+    └─ HerInfoNotification.entitlements <span class="cm">// 只需要一条：和主 App 同一个 App Group</span></code></pre>
+
+  <div class="callout warn" style="margin-top:14px">
+    <b>为什么工程结构是一个 YAML 而不是 <span class="mono-s">.xcodeproj</span>：</b>
+    <span class="mono-s">.xcodeproj</span> 是一堆 UUID 的 XML，两人改必冲突、diff 出来看不懂。
+    <span class="mono-s">project.yml</span> 是工程结构的唯一真相，改了什么一眼看得出来。
+    更重要的是它把三件「漏了不报错」的手工操作变成了结构声明 ——
+    契约少勾一个 target、App Group 少开一边、扩展 bundle id 没挂到宿主 App 下，
+    在这里是漏不了的。
+  </div>
+
+  <div class="callout info" style="margin-top:14px">
+    <b>不需要资源的项目：</b>所有图标走 SF Symbols，所有色值走
+    <span class="mono-s">Tokens.swift</span>，字体用系统（理由见下一节）。
+    唯一要出的资产是 App Icon 与启动图 —— 1024×1024 源图，品牌色
+    <span class="mono-s">#C0614A</span>，标记是 <span class="mono-s">linear-gradient(140°, #CE6E56 → #B4523C)</span>。
+  </div>
+</section>
+
+<section id="tokens">
+  <div class="eyebrow">Tokens</div>
+  <h2>令牌落地</h2>
+  <p class="lead">
+    设计规范页里的 16 个令牌，在代码里是 16 个 <span class="mono-s">Color</span> 静态属性，
+    每个声明浅色与深色两个字面值，通过 <span class="mono-s">UIColor(dynamicProvider:)</span> 跟随系统外观。
+  </p>
+
+  <div class="codebar">
+    <div class="t">Tokens.swift · 双档动态色</div>
+    <button class="copybtn" data-copy="c1">复制</button>
+  </div>
+<pre id="c1"><code><span class="cm">/// 声明一个跟随系统外观切换的语义色。</span>
+<span class="kw">static func</span> dual(_ light: UInt32, _ dark: UInt32) -> Color {
+    Color(uiColor: UIColor { trait <span class="kw">in</span>
+        trait.userInterfaceStyle == .dark
+            ? UIColor(hex: dark)
+            : UIColor(hex: light)
+    })
+}
+
+<span class="kw">enum</span> C {
+    <span class="kw">static let</span> bg      = Color.dual(<span class="st">0xF8F5F0</span>, <span class="st">0x1A1613</span>)   <span class="cm">// 页面底</span>
+    <span class="kw">static let</span> card    = Color.dual(<span class="st">0xFFFFFF</span>, <span class="st">0x241F1B</span>)   <span class="cm">// 卡片面</span>
+    <span class="kw">static let</span> primary = Color.dual(<span class="st">0xC0614A</span>, <span class="st">0xD37C63</span>)   <span class="cm">// 主色</span>
+    <span class="kw">static let</span> ink     = Color.dual(<span class="st">0x1F1E1B</span>, <span class="st">0xF3EEE8</span>)   <span class="cm">// 主文字</span>
+    <span class="kw">static let</span> danger  = Color.dual(<span class="st">0xB0523C</span>, <span class="st">0xD98672</span>)   <span class="cm">// 危险色 ≠ 主色</span>
+    <span class="cm">// …共 16 个，与规范页逐值对应</span>
+}</code></pre>
+
+  <div class="grid g2" style="margin-top:20px">
+    <div class="card pad">
+      <h4>为什么不用 Asset Catalog 的 Color Set</h4>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0">
+        两者都能跟随深浅色。用代码的版本<b>零配置就能跑</b>（拖进 Xcode 直接编译），
+        且 16 个色值集中在同一个文件里，设计师对着规范页改一处即可。
+        如果团队更希望「改色不改代码」，换成同名的 Color Set 就行 ——
+        <b>视图层一行都不用动</b>，因为大家用的都是 <span class="mono-s">C.primary</span> 这样的语义名。
+      </p>
+    </div>
+    <div class="card pad">
+      <h4>三条不能违反的规则</h4>
+      <ul class="tight">
+        <li><b>视图文件里不许出现字面色值。</b>看到 <span class="mono-s">Color(red:…)</span> 就是错，回 Token 层加一个语义名。</li>
+        <li><b>危险色永远不等于主色。</b>删除是破坏性动作，它和「保存」同色的话，用户就没法靠颜色区分两件事。</li>
+        <li><b>圆角一律 <span class="mono-s">.continuous</span>。</b>iOS 的连续曲率圆角（俗称超椭圆）和 CSS 的 <span class="mono-s">border-radius</span> 不是同一条曲线 —— 默认的 <span class="mono-s">.circular</span> 看起来会更硬、更廉价。</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>字体：这是设计稿与 iOS 之间最大的一处差异</h3>
+  <p class="lead" style="margin-bottom:14px">
+    设计稿是中文 <b>Noto Sans SC</b>、数字与字母 <b>Inter</b>。到 iOS 上要分开处理：
+  </p>
+
+  <table>
+    <thead><tr><th>角色</th><th>设计稿</th><th>iOS 落地</th><th>理由</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>中文</td>
+        <td>Noto Sans SC</td>
+        <td><b>系统字体</b><br><span class="mono-s">.system(size:weight:)</span></td>
+        <td>系统字体就是苹方，是 iOS 上渲染质量最好的中文字体，自带系统级字重与动态字距。捆绑 Noto Sans SC 的三个字重（Regular / Medium / SemiBold）大约多 <b>15MB 包体</b>，换来的是一套略逊于系统的中文 —— 不划算。</td>
+      </tr>
+      <tr>
+        <td>数字 / 字母</td>
+        <td>Inter</td>
+        <td><b>SF Pro</b> + <span class="mono-s">.monospacedDigit()</span></td>
+        <td>Inter 与 SF Pro 在数字上的视觉差异极小。而等宽数字是<b>必须的</b>：<span class="mono-s">20:00</span> 这类时间、<span class="mono-s">128 条</span> 这类计数，不设等宽的话数字一变宽度整行都在跳。</td>
+      </tr>
+      <tr>
+        <td>跨平台一致<br>（如同时出 Android）</td>
+        <td>—</td>
+        <td>捆绑 Noto Sans SC<br><span class="mono-s">Font.custom("Noto Sans SC", size:)</span></td>
+        <td>拖字体文件进 target，在 <span class="mono-s">Info.plist</span> 的 <span class="mono-s">UIAppFonts</span> 登记即可。<b>Token 层已经收口，届时只改 <span class="mono-s">Tokens.swift</span> 一个文件。</b></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>图标：手绘 SVG → SF Symbols</h3>
+  <p class="lead" style="margin-bottom:14px">
+    底部 4 个 tab 图标在设计稿里是手绘 SVG，代码里换成系统符号。
+  </p>
+  <table>
+    <thead><tr><th>设计稿位置</th><th>SF Symbol</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td>底部 tab · 首页</td><td><span class="mono-s">house</span></td><td rowspan="4">SF Symbols 自动跟随字号与字重、矢量不用切图、且是系统自身的语言。设计稿的手绘版本仍保留在画布上，作为「如果不考虑系统一致性」的备选。</td></tr>
+      <tr><td>底部 tab · 分类</td><td><span class="mono-s">square.grid.2x2</span></td></tr>
+      <tr><td>底部 tab · 搜索</td><td><span class="mono-s">magnifyingglass</span></td></tr>
+      <tr><td>底部 tab · 提醒</td><td><span class="mono-s">bell</span></td></tr>
+      <tr><td>01 首页设置入口</td><td><span class="mono-s">slider.horizontal.3</span></td><td>其余手绘图标同理优先找 SF Symbols 对应项，找不到的再导出 SVG 当资产。</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="screens">
+  <div class="eyebrow">Screens</div>
+  <h2>逐屏规格</h2>
+  <p class="lead">
+    37 屏逐个过一遍。右边是这一屏会用到的系统能力 ——
+    没有标 API 的就是纯排版，照组件库拼即可。
+    <b>带主色边框的五条是本轮新增</b>，也是「屏齐了」与「能用」之间最后的那段路；
+    其中 36 屏是 14 屏那条通知的<b>长按展开态</b>，要单建一个 target（见「通知内容扩展」）。
+  </p>
+
+  <h3>主流程 · 6 屏</h3>
+  <div class="scrlist">
+
+    <div class="scrrow">
+      <div class="no">01</div>
+      <div>
+        <div class="nm">首页 · 她的档案</div>
+        <div class="ds">顺序是「问候 → 搜索条 → 她的名片 → 最近的提醒 → 四条分类」。首页只回答一个问题：<b>今天有什么是她相关的</b>。所以提醒只列<b>最近会发生的那一条</b>，不是全部 —— 首页是看一眼就走的地方。</div>
+      </div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">@Query</span><span class="key api">@AppStorage</span></div>
+    </div>
+
+    <div class="scrrow">
+      <div class="no">02</div>
+      <div>
+        <div class="nm">分类浏览 · 喜好</div>
+        <div class="ds">四个分类胶囊横排，一屏之内不用退出就能换一类。列表项左侧有 3px 分类色条，靠颜色就能扫过去。右下角浮起按钮离屏底 108，不是贴底 —— 贴底会被底部导航压住一半。</div>
+      </div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">@Query</span><span class="key api">@AppStorage</span></div>
+    </div>
+
+    <div class="scrrow">
+      <div class="no">03</div>
+      <div>
+        <div class="nm">新增记录 · 自动保存</div>
+        <div class="ds">自动保存是<b>状态条不是进度条</b>：只说「已自动保存」+「本地版本 N」，不报条数、不问评分、不显示「还差几条」。记录一旦变成任务就没人愿意记。改动后 0.8s debounce 落盘，每次落盘版本 +1。</div>
+      </div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">SwiftData</span><span class="key api">Task.sleep</span></div>
+    </div>
+
+    <div class="scrrow">
+      <div class="no">04</div>
+      <div>
+        <div class="nm">搜索 · 全局查找</div>
+        <div class="ds">搜标题与正文。首页那条搜索栏是<b>按钮不是输入框</b> —— 点它进这一屏再打字，这样首页不会被键盘顶起来。</div>
+      </div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">@Query</span></div>
+    </div>
+
+    <div class="scrrow">
+      <div class="no">05</div>
+      <div>
+        <div class="nm">提醒 · 定时与场景</div>
+        <div class="ds">定时与场景两组卡片。右上角「新建提醒」是原设计里<b>没有落点</b>的入口 —— 本轮补上了 32 屏。这一屏还要显示场景点额度（已用 N/20），因为加满之后再设是不会响的。</div>
+      </div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">UNUserNotification</span><span class="key api">CoreLocation</span></div>
+    </div>
+
+    <div class="scrrow isnew">
+      <div class="no">32</div>
+      <div>
+        <div class="nm">新建提醒 · 定时与场景 <span class="tag-x p" style="margin-left:6px">本轮新增</span></div>
+        <div class="ds">
+          三处落地要点：<b>①</b>「时间」与「提前多久」是两组 —— 前者是事实（每周三 20:00），后者是你想要的余量（提前 10 分钟），混在一起用户算不清几点响。
+          <b>②</b>「通知预览」是表单最后一块，保存前能看见那行字 —— 提醒的成败全在它身上。
+          <b>③</b> 定时/场景整体换块，不在同一组里加可选字段（那会让表单变成一半字段是灰的）。
+          提前量落到系统里就是「触发时刻 −N 分钟」。
+        </div>
+      </div>
+      <div class="keys"><span class="key api">UNCalendar<br>NotificationTrigger</span><span class="key api">CLCircularRegion</span><span class="key">SwiftData</span></div>
+    </div>
+  </div>
+
+  <h3>本轮新增 · 补掉四个断链入口（另外 3 屏）</h3>
+  <div class="scrlist">
+
+    <div class="scrrow isnew">
+      <div class="no">33</div>
+      <div>
+        <div class="nm">编辑她的档案</div>
+        <div class="ds">
+          这一屏的存在理由是<b>分批收集</b>：15 屏第一次只问称呼和纪念日两件事 —— 问太多人就退出去了。剩下的（头像 / 生日 / 城市 / 一句话）全在这里补，首页那个「完整度 86%」就是「还有多少能补」的度量。
+          落地注意：日期用 <span class="mono-s">DatePicker</span> 不要用文本框（格式歧义多、容易打错）；头像走 <span class="mono-s">PhotosPicker</span> 后只存沙盒 hash。
+        </div>
+      </div>
+      <div class="keys"><span class="key">SwiftData</span><span class="key api">DatePicker</span><span class="key api">PhotosPicker</span></div>
+    </div>
+
+    <div class="scrrow isnew">
+      <div class="no">34</div>
+      <div>
+        <div class="nm">记录配图 · 插入照片</div>
+        <div class="ds">
+          34 与 03 是<b>同一个编辑器的两种态</b>，代码里就是同一个 View。<b>图片紧跟标题</b>，不塞在正文下面 —— 图片是这类 App 的一等公民不是附件：一条「她说想要这个」配上照片，半年后还认得出是哪一款，纯文字不能。
+          尺寸是算出来的不是凑的：<span class="mono-s">105×3 + 10×2 = 335 = 375 − 40</span>，一行正好 3 个。长按拖动排序，上限 9 张，到顶后添加格消失而不是置灰。
+        </div>
+      </div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">PhotosPicker</span><span class="key api">LazyVGrid</span><span class="key">最长 9 张</span></div>
+    </div>
+
+    <div class="scrrow isnew">
+      <div class="no">35</div>
+      <div>
+        <div class="nm">导出档案 · 范围与格式</div>
+        <div class="ds">
+          三种格式是三个不同的目的，所以每行写「适合什么」而不是只写扩展名：<b>PDF 给别人看 / Markdown 给自己存 / JSON 给下一个手机用</b>。
+          JSON 是唯一能「导回来」的格式，字段最完整。范围与包含项是<b>一次性的草稿状态</b>，导完即弃，不写回设置。
+          12 屏那条「导出需要面容 ID」在这一屏兑现 —— 导出是一次性动作，但带走的是全部记录。
+        </div>
+      </div>
+      <div class="keys"><span class="key api">LAContext</span><span class="key api">UIGraphics<br>PDFRenderer</span><span class="key api">Codable</span></div>
+    </div>
+  </div>
+
+  <h3>状态与补充 · 10 屏</h3>
+  <div class="scrlist">
+    <div class="scrrow">
+      <div class="no">06</div>
+      <div><div class="nm">空态 · 起手引导</div><div class="ds">新用户第一眼。空态不是「没有内容」，是「告诉你从哪开始」——所以必须有那一个按钮。</div></div>
+      <div class="keys"><span class="key">纯 UI</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">07</div>
+      <div><div class="nm">历史版本 · 左右对比</div><div class="ds">左右并排比差异，比上下叠着更容易看出改了哪句。<b>恢复 = 新增一条，不覆盖</b> ——覆盖式恢复会让「我想看看昨天写的那版」变成空话。</div></div>
+      <div class="keys"><span class="key">SwiftData</span><span class="key">快照整存</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">08</div>
+      <div><div class="nm">新建记录 · 键盘输入态</div><div class="ds">键盘弹出后底部按钮要贴着键盘走，不能被挡住。用 <span class="mono-s">safeAreaInset(edge:.bottom)</span> 而不是手算偏移。</div></div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">safeAreaInset</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">09</div>
+      <div><div class="nm">情绪打标 · 手动快捷入口</div><div class="ds">关键约束：<b>iOS 沙盒不允许读第三方聊天记录</b>。所以这里全部是「用户自己给出的判断」——长按图标 / 快捷指令 / 分享扩展 / 通知上直接选。</div></div>
+      <div class="keys"><span class="key api">App Intents</span><span class="key api">Share Extension</span><span class="key">不许读聊天</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">10</div>
+      <div><div class="nm">打标之后 · 即时建议</div><div class="ds">这是「04 之上挂一张 sheet」。台账要记 <span class="mono-s">source</span>（手动/锁屏/快捷指令/分享扩展）——数据的合法性取决于「是谁给的」。</div></div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">sheet</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">22</div>
+      <div><div class="nm">保存后 · 轻提示</div><div class="ds">3 秒自动收起，<b>带撤销</b> —— 误存是这页唯一的真实风险。不出现「还差几条」那种话。</div></div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key">3s 自动收起</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">26</div>
+      <div><div class="nm">删除记录 · 二次确认</div><div class="ds">底部面板从屏底升起，圆角 30。确认按钮用危险色，且<b>不是</b>默认焦点。</div></div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">presentationDetents</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">28</div>
+      <div><div class="nm">搜索无结果 · 空态</div><div class="ds">把没找到的那个词原样引回来（「没找到『香水』」），并给一条出路。</div></div>
+      <div class="keys"><span class="key">纯 UI</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">30</div>
+      <div><div class="nm">搜索 · 筛选与范围</div><div class="ds">筛选状态<b>只活在一次搜索里</b>（<span class="mono-s">scope: session</span>），关掉即失效，不写回 25 屏的长期排序偏好 —— 两份状态混起来，用户下次进来会发现排序被偷偷改了。</div></div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key">内存态</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">31</div>
+      <div><div class="nm">记录详情</div><div class="ds">正文 → 挂着的提醒 → 元信息 → 历史版本 → 删除。<b>删除离正文最远</b>，因为手滑的成本取决于中间隔了多少东西。右上角「编辑」进 34。</div></div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key api">@Query</span></div>
+    </div>
+  </div>
+
+  <h3>设置与隐私 · 9 屏</h3>
+  <div class="scrlist">
+    <div class="scrrow">
+      <div class="no">12</div>
+      <div><div class="nm">设置 · 提醒 / 数据 / 隐私</div><div class="ds">三分组。这里通向 35（导出）、27（回收站）、13（应用锁）、23（外观）。注意：开关状态要读取<b>真实的系统权限</b>，否则会出现「通知被关了、开关却显示开」的矛盾。</div></div>
+      <div class="keys"><span class="key api">UNUserNotification</span><span class="key api">@AppStorage</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">13</div>
+      <div><div class="nm">应用锁 · 面容 ID</div><div class="ds">开启前先过一次验证。无生物识别时退化到设备密码，<b>不是直接放行</b>。</div></div>
+      <div class="keys"><span class="key api">LAContext</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">14</div>
+      <div><div class="nm">锁屏通知 · 提醒到达</div><div class="ds">收起态。<b>标题与正文由系统画</b>（<span class="mono-s">defaultContentHidden = false</span>），所以这一屏不需要扩展做任何事。开了应用锁之后，锁屏上<b>不能显示具体内容</b>（<span class="mono-s">UNNotificationContent.hiddenPreviewsBodyPlaceholder</span>）。</div></div>
+      <div class="keys"><span class="key api">UNNotification<br>Category</span><span class="key">收起态</span></div>
+    </div>
+    <div class="scrrow isnew">
+      <div class="no">36</div>
+      <div>
+        <div class="nm">锁屏通知 · 展开态</div>
+        <div class="ds">
+          长按展开后的样子，<b>由通知内容扩展（独立 target）渲染</b>。
+          系统继续画标题与正文，扩展只补系统画不出来的三块：<b>配图 / 元信息 / 五个等宽打标胶囊</b>。
+          打标不在收起态里 —— 收起态只放「1 小时后 / 今天不用了」两个轻决定，点错也没关系；
+          打标要先看一眼内容再选，所以它属于展开态。
+        </div>
+      </div>
+      <div class="keys"><span class="key api">Notification<br>Content Extension</span><span class="key api">UNNotification<br>Attachment</span><span class="key api">App Group</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">17</div>
+      <div><div class="nm">她的档案 · 详情</div><div class="ds">首页名片的详情版：头像 + 天数 + 四条分类统计 + 基本信息（33 屏编辑内容的只读展示）。右上角「编辑」进 33。</div></div>
+      <div class="keys"><span class="key">SwiftData</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">23</div>
+      <div><div class="nm">外观 · 跟随系统</div><div class="ds">三选一，<b>「跟随系统」放第一位并默认选中</b> —— 用户对主题的真实期待就是「别让我管」。两扇实时预览窗比三行文字说明有用。页脚<b>必须写明「手动选定后就固定下来」</b>，否则用户以为跟随系统坏了。</div></div>
+      <div class="keys"><span class="key api">@AppStorage</span><span class="key api">preferredColorScheme</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">24</div>
+      <div><div class="nm">通知权限 · 关掉之后</div><div class="ds"><b>权限被拒不是错误，是状态。</b>iOS 通知权限一辈子只问一次，用户点了「不允许」就再没有第二次机会 —— 所以这一屏不能做成「求你再开一次」，必须是「不开也还能用」，然后给一个跳系统设置的出口。</div></div>
+      <div class="keys"><span class="key api">openSettingsURL</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">25</div>
+      <div><div class="nm">排序与置顶</div><div class="ds">置顶<b>封顶 3 条</b>，且要显示「2 / 3」——置顶一多就等于没置顶。这份排序是长期偏好（写 @AppStorage），与 30 屏的筛选草稿是两份状态。</div></div>
+      <div class="keys"><span class="key api">@AppStorage</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">27</div>
+      <div><div class="nm">回收站</div><div class="ds">软删除：只置 <span class="mono-s">deletedAt</span>，不真删。30 天后由本地任务清理 —— <b>30 天是「想起来找」与「占地方」之间的经验值</b>。恢复 = 把 <span class="mono-s">deletedAt</span> 清掉。</div></div>
+      <div class="keys"><span class="key api">SwiftData</span><span class="key api">BGTaskScheduler</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">29</div>
+      <div><div class="nm">回收站 · 空态</div><div class="ds">空的时候顺便告诉用户「删掉的会去哪」，并列出三条删除路径 —— 空态是唯一能讲清规则的地方。</div></div>
+      <div class="keys"><span class="key">纯 UI</span></div>
+    </div>
+  </div>
+
+  <h3>首次使用与引导 · 3 屏</h3>
+  <div class="scrlist">
+    <div class="scrrow">
+      <div class="no">15</div>
+      <div><div class="nm">首次使用 · 建立她的档案</div><div class="ds">只问两件事：称呼、在一起的日子。<b>问太多人就退出去了</b> —— 剩下的在 33 屏慢慢补。</div></div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key">只问 2 项</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">16</div>
+      <div><div class="nm">首次使用 · 开启通知</div><div class="ds">把「不读取聊天记录」<b>直接印在请求通知的页面上</b> —— 用户敢点「允许」，靠的就是这句话。这是全案最要紧的一条文案。</div></div>
+      <div class="keys"><span class="key api">UNUser<br>Notification</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">21</div>
+      <div><div class="nm">首条记录引导 · 预填编辑器</div><div class="ds">「换一题」的落点用取模轮换，标题/示范/标签<b>三个投影一起换</b> —— 才能说明白它们是同一套数据。</div></div>
+      <div class="keys"><span class="key">纯 UI</span></div>
+    </div>
+  </div>
+
+  <h3>深色模式与说明板 · 5 屏</h3>
+  <div class="scrlist">
+    <div class="scrrow">
+      <div class="no">19</div>
+      <div><div class="nm">深色 · 首页</div><div class="ds">不是重新设计，是同一套令牌换一档值。核对清单：分隔线不能比卡面亮太多；滑块投影<b>要保留</b>（它让圆点浮在轨道上，不是层级阴影）。</div></div>
+      <div class="keys"><span class="key">纯 UI</span><span class="key">令牌切档</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">20</div>
+      <div><div class="nm">深色 · 设置</div><div class="ds">同上。注意状态类（<span class="mono-s">.on</span>）不能被覆盖规则压掉 —— 否则深色下所有「开」的开关都会变灰。</div></div>
+      <div class="keys"><span class="key">纯 UI</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">00</div>
+      <div><div class="nm">功能架构总览 <span class="tag-x" style="margin-left:6px">说明板</span></div><div class="ds">1330 宽的横版说明板，不进代码。</div></div>
+      <div class="keys"><span class="key">非界面</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">11</div>
+      <div><div class="nm">开发交接 · 设计规范与实现要点 <span class="tag-x" style="margin-left:6px">说明板</span></div><div class="ds">画布上的静态版交接板。本文档是它的可交互超集。</div></div>
+      <div class="keys"><span class="key">非界面</span></div>
+    </div>
+    <div class="scrrow">
+      <div class="no">18</div>
+      <div><div class="nm">深色模式 · 设计规范 <span class="tag-x" style="margin-left:6px">说明板</span></div><div class="ds">深色令牌与调整原则，1330 宽说明板。</div></div>
+      <div class="keys"><span class="key">非界面</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="api">
+  <div class="eyebrow">APIs</div>
+  <h2>系统能力映射</h2>
+  <p class="lead">
+    这个 App 用到的系统能力一共 9 项。全部是系统框架，没有一个第三方。
+    「限制」那一列是这条能力真正的边界 —— <b>它已经改变过设计</b>。
+  </p>
+
+  <table>
+    <thead><tr><th>能力</th><th>框架</th><th>用在哪</th><th>限制 / 注意</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>本地存储</td>
+        <td><span class="mono-s">SwiftData</span></td>
+        <td>全部 6 张表</td>
+        <td>无。数据量小（记录是几十个字），不需要分页或后台上下文。</td>
+      </tr>
+      <tr>
+        <td>定时提醒</td>
+        <td><span class="mono-s">UserNotifications</span><br><span class="mono-s">UNCalendarNotificationTrigger</span></td>
+        <td>05 / 14 / 32</td>
+        <td><b>权限一辈子只问一次。</b>被拒之后只能引导去系统设置（24 屏）。提前量 = 触发时刻 −N 分钟。</td>
+      </tr>
+      <tr>
+        <td>场景提醒</td>
+        <td><span class="mono-s">CoreLocation</span><br><span class="mono-s">CLCircularRegion</span></td>
+        <td>05 / 32</td>
+        <td><b>单 App 最多 20 个区域。</b>这是硬上限，所以设计上做成「从已有高频地点里选」而不是「想加多少加多少」，且要显示额度。</td>
+      </tr>
+      <tr>
+        <td>应用锁 / 导出门禁</td>
+        <td><span class="mono-s">LocalAuthentication</span><br><span class="mono-s">LAContext</span></td>
+        <td>13 / 35</td>
+        <td>模拟器上没有生物识别。用 <span class="mono-s">.deviceOwnerAuthentication</span> 退化到设备密码，<b>不要直接放行</b>。</td>
+      </tr>
+      <tr>
+        <td>图片选择</td>
+        <td><span class="mono-s">PhotosUI</span><br><span class="mono-s">PhotosPicker</span></td>
+        <td>33 / 34</td>
+        <td>不需要完整的相册权限 —— <span class="mono-s">PhotosPicker</span> 是系统面板，用户选哪张才给哪张。图片落沙盒后<b>只记 hash</b>，不存路径。</td>
+      </tr>
+      <tr>
+        <td>PDF 生成</td>
+        <td><span class="mono-s">UIGraphicsPDFRenderer</span></td>
+        <td>35</td>
+        <td>走 UIKit 字面值，不能用 SwiftUI 的动态色 —— <b>导出的 PDF 是纸质语义，不跟随深色</b>。</td>
+      </tr>
+      <tr>
+        <td>文件导出</td>
+        <td><span class="mono-s">FileManager</span></td>
+        <td>35</td>
+        <td>落 <span class="mono-s">DocumentDirectory</span>（「文件」App 里可见、可删）。<b>不做「分享到某个云」</b> —— 数据不出本机是承诺。</td>
+      </tr>
+      <tr>
+        <td>快捷入口</td>
+        <td><span class="mono-s">App Intents</span><br><span class="mono-s">Share Extension</span></td>
+        <td>09</td>
+        <td>这是「不读聊天记录」之后<b>唯一合法的替代路径</b>：不猜、不读，只记录用户自己给出的判断。</td>
+      </tr>
+      <tr>
+        <td>到期清理</td>
+        <td><span class="mono-s">BGTaskScheduler</span></td>
+        <td>27</td>
+        <td>后台任务不保证按时执行。所以清理必须是「<b>下次打开时顺便做</b>」而不是「依赖它在第 30 天跑」。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn" style="margin-top:16px">
+    <b>最容易漏的一步：</b>启动时要<b>重排一次全部提醒</b>。
+    卸载重装、重启、系统清理都会丢掉待发通知，而用户以为提醒还在 ——
+    表现是「设了提醒但从来不会响」，那是最坏的一种 bug：不报错、不崩溃，只是安静地失效。
+    <span class="mono-s">HerInfoApp.bootstrap()</span> 里已经做了这件事。
+  </div>
+</section>
+
+<section id="notify">
+  <div class="eyebrow">Notifications</div>
+  <h2>通知与地理围栏</h2>
+  <p class="lead">
+    设计稿里「定时 / 场景」的两分法，到代码里是两套完全不同的系统 API。
+    这一节是它们之间的翻译表。
+  </p>
+
+  <div class="grid g2">
+    <div class="card pad">
+      <div class="chead"><h3 style="margin:0">定时</h3><span class="tag-x g">数量几乎不限</span></div>
+      <div class="kv"><b>框架</b><span class="mono-s">UNCalendarNotificationTrigger</span></div>
+      <div class="kv"><b>重复</b><span>不设 = 触发一次；设 = 按 <span class="mono-s">weekday</span> / <span class="mono-s">day</span> 循环</span></div>
+      <div class="kv"><b>提前量</b><span>设计上的「提前 10 分钟」= 触发时刻 −10min</span></div>
+      <div class="kv"><b>离线</b><span>纯本地，不联网也能响</span></div>
+      <div class="kv"><b>通知文案</b><span>与 32 屏「通知预览」逐字一致</span></div>
+    </div>
+    <div class="card pad">
+      <div class="chead"><h3 style="margin:0">场景</h3><span class="tag-x p">硬上限 20</span></div>
+      <div class="kv"><b>框架</b><span class="mono-s">CLCircularRegion</span></div>
+      <div class="kv"><b>上限</b><span><b>单 App 最多 20 个</b>，这是系统常量不是可调参数</span></div>
+      <div class="kv"><b>半径</b><span>默认 300 米。太小会因定位漂移反复触发，太大等于整条街都算</span></div>
+      <div class="kv"><b>触发</b><span>只在<b>进入</b>时提醒（<span class="mono-s">notifyOnEntry</span>），离开不打扰</span></div>
+      <div class="kv"><b>到顶时</b><span>必须给「已用 20/20，先关掉一个」的提示，<b>不能静默失败</b></span></div>
+    </div>
+  </div>
+
+  <div class="callout info" style="margin-top:16px">
+    <b>为什么到顶不能静默失败：</b>静默失败的表现是「设了提醒但从来不会响」——
+    用户不会收到任何错误，只会某天发现错过了。所以额度检查是<b>产品需求而不是实现细节</b>，
+    它已经写进了 05 屏的界面（「已用 3 / 20」）。
+  </div>
+
+  <h3>点开通知之后</h3>
+  <p class="lead" style="margin-bottom:14px">
+    32 屏脚注承诺「点开直接回到这条记录」。落地是：通知的
+    <span class="mono-s">userInfo</span> 里带 <span class="mono-s">recordID</span>，
+    delegate 收到点击后 post 一个通知，<span class="mono-s">RootView</span> 监听它来推路由。
+  </p>
+  <div class="codebar">
+    <div class="t">ReminderService.swift · 点通知 → 跳记录</div>
+    <button class="copybtn" data-copy="c2">复制</button>
+  </div>
+<pre id="c2"><code><span class="cm">// 发出时：把 recordID 塞进去</span>
+content.userInfo = [<span class="st">"recordID"</span>: rid]
+
+<span class="cm">// 收到点击时：交给 RootView 推路由</span>
+<span class="kw">nonisolated func</span> userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse
+) <span class="kw">async</span> {
+    <span class="kw">let</span> info = response.notification.request.content.userInfo
+    <span class="kw">guard let</span> rid = info[<span class="st">"recordID"</span>] <span class="kw">as?</span> String <span class="kw">else</span> { <span class="kw">return</span> }
+    <span class="kw">await</span> MainActor.run {
+        NotificationCenter.default.post(name: .openRecord, object: rid)
+    }
+}</code></pre>
+</section>
+
+<section id="nsext">
+  <div class="eyebrow">Extension</div>
+  <h2>通知内容扩展 · 独立 target</h2>
+  <p class="lead">
+    <b>36 屏不是主 target 里的一个 View。</b>它是另一个进程：自己的入口类、自己的生命周期、
+    自己的 Info.plist，看不见主 App 的内存，也不会跟主 App 一起被启动。
+    这套设计里其他部分都是「照组件库拼」，只有这一块要动工程配置 ——
+    所以这一节讲的全是<b>两个进程怎么不打架</b>。
+  </p>
+
+  <div class="grid g3" style="margin-top:24px">
+    <div class="card pad">
+      <h4>target</h4>
+      <div class="kv"><b>名称</b><span class="mono-s">HerInfoNotification</span></div>
+      <div class="kv"><b>扩展点</b><span class="mono-s">…notifications.content-extension</span></div>
+      <div class="kv"><b>入口类</b><span class="mono-s">NotificationViewController</span></div>
+    </div>
+    <div class="card pad">
+      <h4>三个文件各管什么</h4>
+      <ul class="tight">
+        <li><span class="mono-s">NotificationViewController</span> —— 取到通知、读系统搬来的附件、把点击<b>转发给主 App</b></li>
+        <li><span class="mono-s">NotificationContentView</span> —— 展开态那三块：配图 / 元信息 / 五个胶囊</li>
+        <li><span class="mono-s">NotificationStyle</span> —— 白阶透明度那一套；<b>一个 hex 都没有</b></li>
+      </ul>
+    </div>
+    <div class="card pad">
+      <h4>共享容器只有一个用途</h4>
+      <div class="kv"><b>App Group</b><span class="mono-s">group.com.herinfo.app</span></div>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:10px 0 0">
+        <b>只为打标收件箱而存在。</b>配图不走它 —— 那一块交给系统搬运（下一节）。<br>
+        能把共享容器压到只有这一个用途，是这套方案能保持最小改动的原因。
+      </p>
+    </div>
+  </div>
+
+  <h3>Info.plist 里的六个键，少一个就是白做</h3>
+  <table>
+    <thead><tr><th>键</th><th>值</th><th>漏了 / 写错会怎样</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="mono-s">NSExtensionPointIdentifier</span></td>
+        <td><span class="mono-s">com.apple.usernotifications<br>.content-extension</span></td>
+        <td>系统不知道这是通知扩展，target 根本不会被调用。</td>
+      </tr>
+      <tr>
+        <td><span class="mono-s">NSExtensionPrincipalClass</span></td>
+        <td><span class="mono-s">$(PRODUCT_MODULE_NAME)<br>.NotificationViewController</span></td>
+        <td>找不到入口类，长按展开后是一片空白。</td>
+      </tr>
+      <tr>
+        <td><b><span class="mono-s">UNNotificationExtensionCategory</span></b></td>
+        <td><span class="mono-s">HI_REMIND</span></td>
+        <td>
+          <b>最容易白做的那个。</b>必须与主 App 排程时写的
+          <span class="mono-s">categoryIdentifier</span> 逐字一致 ——
+          对不上<b>不报错、不崩溃</b>，只是通知照弹、长按展开回到系统默认样子。
+        </td>
+      </tr>
+      <tr>
+        <td><span class="mono-s">UNNotificationExtension<br>DefaultContentHidden</span></td>
+        <td><span class="mono-s">false</span></td>
+        <td>设 <span class="mono-s">true</span> 系统就不画标题与正文了，你得自己再画一遍 —— 14 屏那两行字会变成两处维护。</td>
+      </tr>
+      <tr>
+        <td><span class="mono-s">UNNotificationExtension<br>InitialContentSizeRatio</span></td>
+        <td><span class="mono-s">0.12</span></td>
+        <td>收起态按 12% 高度给初始空间。收起时扩展视图被压成 0 高（见下），所以这个值只影响系统给多少初始空间。</td>
+      </tr>
+      <tr>
+        <td><b><span class="mono-s">UNNotificationExtension<br>UserInteractionEnabled</span></b></td>
+        <td><span class="mono-s">true</span></td>
+        <td><b>默认是 false。</b>不显式写 true，五个打标胶囊就点不动 —— 同样不会报错，你只会以为是自己代码写错了。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>三条纪律</h3>
+  <table>
+    <thead><tr><th>纪律</th><th>做法</th><th>不做会怎样</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>契约只写一遍</b></td>
+        <td>
+          <span class="mono-s">Shared/NotificationContract.swift</span> 同时属于两个 target 的 Compile Sources，
+          且<b>只依赖 Foundation 与 UserNotifications</b>（不 import SwiftData / SwiftUI）。
+          分类 id、动作 id、userInfo 的键、App Group 名、五个情绪档、12 个共用色值，全在这里。
+          <br>在 <span class="mono-s">project.yml</span> 里，这个「同时属于」是写死的：
+          同一个路径出现在两个 target 的 <span class="mono-s">sources</span> 下 ——
+          <b>手工勾漏一个的可能性被消除掉了</b>。
+        </td>
+        <td>
+          两边各写一遍就一定会分叉 —— 而分叉的表现是
+          <b>「通知照常弹，长按展开是系统默认样子」</b>：不报错、不崩溃，只是白做。
+        </td>
+      </tr>
+      <tr>
+        <td><b>打标走单向收件箱</b></td>
+        <td>
+          扩展只往 App Group 里 <span class="mono-s">push</span>；
+          主 App 启动 / 回前台时 <span class="mono-s">drain</span> 出来，落成真正的
+          <span class="mono-s">Mood</span> 行（来源标成「锁屏」）。
+        </td>
+        <td>
+          两个进程同时开一个 SwiftData 库会有写冲突，而扩展被系统回收的时机完全不可控 ——
+          <b>在那种地方做数据库事务是不负责任的</b>。方向只有一条，也就没有并发问题。
+        </td>
+      </tr>
+      <tr>
+        <td><b>图片让系统搬</b></td>
+        <td>
+          主 App 挂 <span class="mono-s">UNNotificationAttachment</span>，
+          系统把文件拷进通知自己的目录，扩展直接读 <span class="mono-s">attachments.first.url</span>。
+        </td>
+        <td>
+          走共享容器就得多管一套「谁创建、谁清理、什么时候过期」的逻辑，
+          而扩展读图<b>根本不需要它</b>。
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>契约长什么样</h3>
+  <div class="codebar">
+    <div class="t">Shared/NotificationContract.swift</div>
+  </div>
+<pre><code><span class="cm">// 两个 target 的 Compile Sources 都要勾上；只 import Foundation + UserNotifications</span>
+<span class="kw">enum</span> HINotify {
+    <span class="kw">static let</span> appGroup = <span class="st">"group.com.herinfo.app"</span>
+    <span class="kw">static let</span> reminderCategory = <span class="st">"HI_REMIND"</span>   <span class="cm">// 必须与扩展 Info.plist 逐字一致</span>
+
+    <span class="kw">enum</span> Action { snoozeOneHour, doneToday }        <span class="cm">// 收起态只放两个轻决定，刻意的</span>
+    <span class="kw">enum</span> Mood: String, CaseIterable { happy, tired, down, angry, calm }
+    <span class="kw">enum</span> Primary { light, dark, softLight, softDark, deepLight, deepDark }
+    <span class="kw">enum</span> Cat: String { like, trait_, care, hate }   <span class="cm">// 每个都有 lightHex + darkHex + title</span>
+
+    <span class="kw">struct</span> Payload { <span class="cm">/* recordID / title / body / cat / version / photoCount */</span> }
+    <span class="kw">struct</span> MoodMark: Codable, Sendable { <span class="cm">/* recordID / level / at */</span> }
+
+    <span class="kw">enum</span> Inbox {                                    <span class="cm">// 扩展 → 主 App 的单向通道</span>
+        <span class="kw">static func</span> push(_ mark: MoodMark)          <span class="cm">// 扩展侧只写</span>
+        <span class="kw">static func</span> drain() -> [MoodMark]           <span class="cm">// 主 App 取走并清空</span>
+    }
+}</code></pre>
+
+  <div class="callout info" style="margin-top:14px">
+    <b>收起态为什么什么都不画：</b>扩展的 SwiftUI 视图在收起态被系统压得很矮。
+    这时候如果还画图或画一排胶囊，收起的样子就变成「一条被切掉一半的怪东西」。
+    所以 36 屏的视图里，<b>非展开分支直接 <span class="mono-s">Color.clear.frame(height: 0)</span></b> ——
+    <b>画布 14 屏（收起态）能逐字对得上，靠的就是这个分支。</b>
+  </div>
+
+  <h3>主 App 侧要接的六件事</h3>
+  <div class="grid g2">
+    <div class="card pad">
+      <ul class="tight">
+        <li>排程时写 <span class="mono-s">content.categoryIdentifier = HINotify.reminderCategory</span> —— 不写，扩展永远不出现</li>
+        <li><span class="mono-s">userInfo</span> 里塞 <span class="mono-s">recordID / cat / version / photoCount</span> —— 缺字段时扩展会退到系统画的那份内容，<b>宁可少画一块，也不整块空白</b></li>
+        <li><span class="mono-s">attachFirstPhoto(of:to:)</span> 挂附件 —— 扩展读图靠它，不需要共享容器</li>
+      </ul>
+    </div>
+    <div class="card pad">
+      <ul class="tight">
+        <li><span class="mono-s">registerCategories()</span> 注册 <span class="mono-s">HI_REMIND</span> + 两个动作 —— 收起态的按钮在这里定义</li>
+        <li><span class="mono-s">HerInfoApp</span> 启动 / 回前台 <span class="mono-s">drainMoodInbox(into:)</span> —— 打标落库的唯一入口</li>
+        <li>两个 delegate 方法标 <span class="mono-s">nonisolated</span>，只取 Sendable 纯值再跨界 —— <b>Swift 6 严格并发下不这么写编译不过</b></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout warn" style="margin-top:14px">
+    <b>色值的单一真相处：</b>主色三档与四个分类色要在<b>三个地方一模一样</b> ——
+    屏幕上是动态色、锁屏通知上是深色档、导出的 PDF 上是浅色档（打印语义，不跟随主题）。
+    所以那 12 个 hex 全部上提到 <span class="mono-s">HINotify</span>，
+    App 的 <span class="mono-s">Tokens.swift</span> 与 <span class="mono-s">ExportService</span> 都改成引用它，
+    <span class="mono-s">NotificationStyle.swift</span> 里一个 hex 都不留。
+    静态检查守着这条线：<b>契约之外出现任何一个共享 hex 就算失败</b>。
+  </div>
+</section>
+
+<section id="model">
+  <div class="eyebrow">Model</div>
+  <h2>数据模型</h2>
+  <p class="lead">
+    6 张表。字段定义以规范页「数据模型建议」为准，这里只讲<b>从 JSON 变成 SwiftData 时做的三个决定</b>。
+  </p>
+
+  <div class="grid g3">
+    <div class="card pad">
+      <h4>① 版本号长在记录上</h4>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0">
+        不放历史表里。这样列表页不用 join 就能显示「第 12 版」。
+      </p>
+    </div>
+    <div class="card pad">
+      <h4>② 历史版本存整份快照</h4>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0">
+        不存 diff。记录本来就是几十个字，省下的空间远远抵不过「读一条历史要重放整条链」的复杂度。
+      </p>
+    </div>
+    <div class="card pad">
+      <h4>③ 图片只存 hash</h4>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0">
+        路径会随重装/换机/系统清理失效，hash 不会；存 URL 则意味着图片在别人服务器上。
+      </p>
+    </div>
+  </div>
+
+  <div class="codebar">
+    <div class="t">Models.swift · 六张表（节选）</div>
+    <button class="copybtn" data-copy="c3">复制</button>
+  </div>
+<pre id="c3"><code><span class="kw">@Model final class</span> Record {
+    <span class="kw">@Attribute</span>(.unique) <span class="kw">var</span> id: String
+    <span class="kw">var</span> cat: Category            <span class="cm">// 只有 4 个值：like / trait_ / care / hate</span>
+    <span class="kw">var</span> title: String
+    <span class="kw">var</span> body: String
+    <span class="kw">var</span> tags: [String]
+
+    <span class="kw">@Relationship</span>(deleteRule: .cascade, inverse: \Photo.record)
+    <span class="kw">var</span> photos: [Photo] = []     <span class="cm">// 最多 9 张</span>
+
+    <span class="kw">@Relationship</span>(deleteRule: .cascade, inverse: \Reminder.record)
+    <span class="kw">var</span> reminder: Reminder?      <span class="cm">// 一条记录最多挂一个</span>
+
+    <span class="kw">var</span> version: Int              <span class="cm">// 每次自动保存 +1</span>
+    <span class="kw">var</span> pinnedAt: Date?           <span class="cm">// 非 nil 即置顶，封顶 3 条</span>
+    <span class="kw">var</span> deletedAt: Date?          <span class="cm">// 软删除，30 天后本地清理</span>
+    <span class="kw">var</span> createdAt: Date
+    <span class="kw">var</span> updatedAt: Date
+}
+
+<span class="kw">@Model final class</span> Reminder {
+    <span class="kw">var</span> kind: ReminderKind        <span class="cm">// date | geo  —— 两套 API，不是一个模型加字段</span>
+    <span class="kw">var</span> repeatRule: RepeatRule
+    <span class="kw">var</span> weekday: Int?
+    <span class="kw">var</span> time: Date
+    <span class="kw">var</span> leadMinutes: Int          <span class="cm">// 与 time 刻意分成两个字段</span>
+    <span class="kw">var</span> placeName: String?
+    <span class="kw">var</span> latitude: Double?         <span class="cm">// 存下来，免得每次反查地理编码（那是网络请求）</span>
+    <span class="kw">var</span> longitude: Double?
+    <span class="kw">var</span> radius: Double = 300
+    <span class="kw">var</span> message: String           <span class="cm">// 32 屏「通知预览」的那一行字</span>
+    <span class="kw">var</span> isOn: Bool
+}
+
+<span class="kw">enum</span> MoodSource: String, Codable {
+    <span class="kw">case</span> manual       <span class="cm">// 09 屏快捷入口</span>
+    <span class="kw">case</span> lockscreen   <span class="cm">// 14 屏通知上直接选</span>
+    <span class="kw">case</span> shortcut     <span class="cm">// 快捷指令</span>
+    <span class="kw">case</span> shareSheet   <span class="cm">// 分享扩展</span>
+    <span class="cm">// 没有、也不会有 .chat —— 留一个就等于把违规路径写进了模型</span>
+}</code></pre>
+</section>
+
+<section id="redline">
+  <div class="eyebrow">Redlines</div>
+  <h2>技术红线</h2>
+  <p class="lead">
+    前两条是<b>平台边界，不是技术选型建议</b>。它们直接改变了两个功能的做法，
+    所以必须写进交接；后两条是这套设计对用户做的承诺，各需要一个真的会执行的机制兜住。
+  </p>
+
+  <div class="grid g2">
+    <div class="card pad">
+      <div class="chead"><h3 style="margin:0">① iOS 沙盒不允许读第三方聊天记录</h3><span class="tag-x p">已改设计</span></div>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0 0 10px">
+        原方案「聊天出现情绪关键词就提醒」<b>没有任何合法路径</b>。已改成：<b>手动打标 + 系统级入口</b> ——
+        长按图标 / 快捷指令 / 分享扩展 / 通知上直接选档位。
+      </p>
+      <div class="callout warn">
+        <b>这条的分量：</b>它把一个「平台能力问题」转成了「用户动作问题」——不猜、不读，只记录用户自己给出的判断。
+      </div>
+    </div>
+
+    <div class="card pad">
+      <div class="chead"><h3 style="margin:0">② 地理围栏有数量上限</h3><span class="tag-x p">已加额度提示</span></div>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0 0 10px">
+        iOS 单 App 最多监听 <b>20 个</b> <span class="mono-s">CLCircularRegion</span>（Android 后台定位同样有配额）。
+        所以场景提醒不能做成「想加多少加多少」。
+      </p>
+      <div class="callout warn">
+        <b>落地要求：</b>开关式管理 + 数量上限 + <b>到顶时给提示</b>。静默失败是最坏的一种 bug。
+      </div>
+    </div>
+
+    <div class="card pad">
+      <h3 style="margin:0 0 10px">③ 数据不出本机</h3>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0 0 10px">
+        无账号、无云同步、无分析 SDK、无崩溃上报。图片落沙盒且只记 hash。
+        导出的文件落「文件」App，用户能自己删。
+      </p>
+      <div class="callout ok">
+        <b>怎么兜住：</b>不引入任何网络依赖（包括埋点）。这一条一旦破例就再也回不去了。
+      </div>
+    </div>
+
+    <div class="card pad">
+      <h3 style="margin:0 0 10px">④ 删除要能收尾</h3>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0 0 10px">
+        删除是软删除，回收站留 30 天，「清空」才算真删（且要过二次确认）。
+        但后台任务不保证按时执行 —— 所以清理必须是「下次打开时顺便做」。
+      </p>
+      <div class="callout ok">
+        <b>怎么兜住：</b><span class="mono-s">BGTaskScheduler</span> 兜底 + 启动时补跑一次，两条路都要有。
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="todo">
+  <div class="eyebrow">Remaining</div>
+  <h2>还差什么</h2>
+  <p class="lead">
+    剩下 13 屏是<b>同一模式的重复劳动</b>，不是新判断。之所以这么判断，是因为它们用的组件
+    —— 卡片 / 胶囊 / 开关 / 空态 / 确认面板 —— 都已经在 <span class="mono-s">Components.swift</span> 里了。
+  </p>
+
+  <div class="card pad" style="border-color:var(--primary);margin-bottom:16px">
+    <h4 style="color:var(--primary)">但第一件该做的不是补屏，是先让它编译起来</h4>
+    <p style="margin:0 0 10px">
+      骨架<b>没有在 Xcode 里编译过</b> —— 编写环境是 Windows，而 Xcode 只跑在 macOS 上。
+      这不是能靠努力绕过的限制，是 Apple 的硬约束。静态通读再仔细，也替代不了编译器。
+      所以工程已经配好了两条路：
+    </p>
+    <table style="margin:0">
+      <thead><tr><th>路线</th><th>怎么做</th><th>适合</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>A · 不用 Mac</b></td>
+          <td>
+            把 <span class="mono-s">她的信息本-iOS/</span> 整个目录推上 GitHub，
+            <span class="mono-s">.github/workflows/ios-build.yml</span> 会自动跑
+            <span class="mono-s">xcodebuild</span>，并把 <span class="mono-s">error</span> /
+            <span class="mono-s">warning</span> 摘成清单回在日志里。
+          </td>
+          <td>现在的目标就是<b>拿到报错清单</b>，不需要模拟器</td>
+        </tr>
+        <tr>
+          <td><b>B · 有 Mac</b></td>
+          <td>
+            <span class="mono-s">brew install xcodegen &amp;&amp; xcodegen generate</span>
+            就有了工程，<b>不用手工建 target / 拖文件 / 勾 Compile Sources / 加 App Groups</b>
+            —— 那些都在 <span class="mono-s">project.yml</span> 里声明好了。
+          </td>
+          <td>要看画面、要真机跑、要调试</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout info" style="margin-top:12px">
+      预计首次编译会有若干警告与少量错误，集中在三类：
+      <span class="mono-s">#Predicate</span> 宏捕获限制、
+      Swift 6 严格并发下的 <span class="mono-s">nonisolated</span> 标注、
+      自定义 <span class="mono-s">Layout</span> 边界 —— 每类在
+      <span class="mono-s">编译预检清单.md</span> 里都给了两种修法。
+      把日志贴回来按行改即可。
+    </div>
+  </div>
+
+  <div class="grid g2">
+    <div class="card pad">
+      <h4>照搬就能完成的（12 屏）</h4>
+      <ul class="tight">
+        <li><b>06 / 28 / 29</b> 三个空态 —— 用 <span class="mono-s">EmptyState</span>，只换图标与文案</li>
+        <li><b>08</b> 键盘态 —— 加 <span class="mono-s">safeAreaInset</span> 即可，不用新 View</li>
+        <li><b>21 / 22</b> 引导与轻提示 —— <span class="mono-s">sheet</span> / <span class="mono-s">overlay</span> 两种挂法</li>
+        <li><b>25 / 27</b> 排序置顶与回收站 —— 已在 <span class="mono-s">SecondaryViews.swift</span> 里写好（完整实现）</li>
+        <li><b>26</b> 删除确认 —— <span class="mono-s">presentationDetents([.height(...)])</span></li>
+        <li><b>07</b> 历史版本对比 —— 两栏 <span class="mono-s">Revision</span> 快照，数据已就绪</li>
+        <li><b>30</b> 筛选面板 —— 一次性草稿状态，不落库</li>
+        <li><b>15 / 16</b> 首次使用 —— 两个静态表单 + 一次权限请求</li>
+      </ul>
+    </div>
+    <div class="card pad">
+      <h4>需要额外工作的（1 项）</h4>
+      <ul class="tight">
+        <li>
+          <b>09 / 10 情绪打标</b> —— 落标本身简单，但要建
+          <b>App Intent</b> 与 <b>Share Extension</b> 两个独立 target。
+          这块的价值全在「入口够不够顺手」上，值得单独排一期。
+        </li>
+      </ul>
+      <div class="callout info" style="margin-top:12px">
+        <b>14 / 36 锁屏通知已经不在这张清单里了。</b>
+        两个 target 的代码、共用的契约文件、Info.plist 的六个键、
+        以及主 App 侧的排程与收件箱对接都已写完，
+        连「哪个键漏了会白做」都写进了下一节。剩下的是<b>编译</b>，不是设计。
+      </div>
+      <div class="callout info" style="margin-top:12px">
+        <b>判断标准：</b>照搬时如果发现某一屏需要「新写一个组件」，
+        多半意味着那一屏用了别人没有的样式 —— <b>先回头看设计，别急着加组件</b>。
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="accept">
+  <div class="eyebrow">Acceptance</div>
+  <h2>验收清单</h2>
+  <p class="lead">
+    按这个顺序自测，前 6 条通了就算「主流程可用」。
+    后面几条是这套设计里最容易做走样的地方，逐条对着设计稿核。
+  </p>
+
+  <table>
+    <thead><tr><th>#</th><th>验收项</th><th>通过标准</th></tr></thead>
+    <tbody>
+      <tr><td>01</td><td>首次启动</td><td>写种子数据，首页四个分类都有数、名片显示「在一起 N 天」</td></tr>
+      <tr><td>02</td><td>新建记录 → 自动保存</td><td>打字 0.8s 后状态条变「已自动保存」，版本号 +1，杀掉进程重进内容还在</td></tr>
+      <tr><td>03</td><td>记录配图</td><td>图片紧跟标题；一行正好 3 个；到 9 张后添加格消失</td></tr>
+      <tr><td>04</td><td>新建提醒 → 通知到达</td><td>通知上那一行字与 32 屏「通知预览」<b>逐字一致</b>；点开直接落在那条记录</td></tr>
+      <tr><td>05</td><td>提醒提前量</td><td>设「20:00 · 提前 10 分钟」，实际是 19:50 响</td></tr>
+      <tr><td>06</td><td>重启后提醒还在</td><td>杀掉进程重进，提醒仍会按时到达（启动时重排生效）</td></tr>
+      <tr><td>07</td><td>深色模式</td><td>切系统深色，37 屏全部跟着变；开关的「开」态<b>不变灰</b></td></tr>
+      <tr><td>08</td><td>删除与恢复</td><td>删除 → 列表消失 → 回收站能找到 → 恢复后回到原位</td></tr>
+      <tr><td>09</td><td>导出</td><td>过面容 ID；三种格式都能打开；JSON 里的 <span class="mono-s">id</span> 与记录一致</td></tr>
+      <tr><td>10</td><td>权限被拒的降级</td><td>系统里关掉通知权限，24 屏给出说明并可跳系统设置，<b>不假装还能用</b></td></tr>
+      <tr><td>11</td><td>无网络</td><td>飞行模式下全流程可用（全本地，没有任何一处需要联网）</td></tr>
+      <tr><td>12</td><td>字号放大</td><td>辅助功能里放大字号，文字不裁切、卡片不重叠</td></tr>
+      <tr><td>13</td><td>通知长按展开</td><td>展开后能看到配图 + 分类点 + 「第 N 版」+ 五个胶囊；<b>收起态仍是系统原生样子</b>，没有多余留白或半截胶囊</td></tr>
+      <tr><td>14</td><td>锁屏打标</td><td>点一个胶囊 → 变成「已记下」；这次打标进共享收件箱，<b>下次打开 App 时写进她的档案</b>（来源 = 锁屏）· 期间 App 从未被启动</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warn" style="margin-top:16px">
+    <b>第 4 条和第 6 条最容易被跳过，但它们是这个产品唯一真正的功能。</b>
+    记录只是手段，<b>「合适的时候被想起来」才是它存在的理由</b>。
+    如果提醒不可靠，前面 36 屏做得再细也没有意义。<br>
+    第 13 / 14 条是这套交付里唯一跨进程的部分 ——
+    它们的失败方式很安静：<b>通知照弹，只是长按展开回到系统默认样子</b>，
+    没有任何报错。所以这两条要手动过，不能只信编译通过。
+  </div>
+</section>
+
+<footer>
+  <div>她的信息本 · iOS 开发交接 v1.2 · 2026.09.10</div>
+  <div style="margin-top:6px">
+    配套交付：画布 37 屏 PNG ｜ 交互原型 HTML ｜ 设计规范 HTML ｜ SwiftUI 起步骨架
+  </div>
+  <div style="margin-top:6px">
+    本文档自身的配色取自这套设计的 16 个令牌 —— 点右上角切换深浅色，可顺带验证令牌是否够用。
+  </div>
+</footer>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ---------- 主题 ---------- */
+var root = document.documentElement;
+var btnTheme = document.getElementById('btnTheme');
+function setTheme(dark){
+  root.setAttribute('data-theme', dark ? 'dark' : 'light');
+  btnTheme.classList.toggle('on', dark);
+  btnTheme.textContent = dark ? '◑ 深色预览 · 开' : '◐ 深色预览';
+}
+btnTheme.addEventListener('click', function(){
+  setTheme(root.getAttribute('data-theme') !== 'dark');
+});
+document.addEventListener('keydown', function(e){
+  if(e.key === 'd' || e.key === 'D'){
+    var t = e.target.tagName;
+    if(t === 'INPUT' || t === 'TEXTAREA') return;
+    setTheme(root.getAttribute('data-theme') !== 'dark');
+  }
+});
+
+/* ---------- 复制 ---------- */
+var toastEl = document.getElementById('toast');
+var toastTimer = null;
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ toastEl.classList.remove('on'); }, 1600);
+}
+document.addEventListener('click', function(e){
+  var btn = e.target.closest('[data-copy]');
+  if(!btn) return;
+  var box = document.getElementById(btn.getAttribute('data-copy'));
+  if(!box) return;
+  var text = box.innerText;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(function(){ toast('已复制'); },
+                                            function(){ toast('复制失败，请手动选择'); });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); toast('已复制'); } catch(err){ toast('复制失败'); }
+    document.body.removeChild(ta);
+  }
+});
+
+/* ---------- 目录高亮 ---------- */
+var links = [].slice.call(document.querySelectorAll('.toc a'));
+var sections = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+function onScroll(){
+  var y = window.scrollY + 140;
+  var active = 0;
+  for(var i = 0; i < sections.length; i++){
+    if(sections[i] && sections[i].offsetTop <= y) active = i;
+  }
+  links.forEach(function(a, i){ a.classList.toggle('on', i === active); });
+}
+window.addEventListener('scroll', onScroll, { passive: true });
+onScroll();
+</script>
+
+</body>
+</html>
+
