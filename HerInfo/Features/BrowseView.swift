@@ -25,6 +25,11 @@ struct BrowseView: View {
     /// 排序偏好。25 屏改的就是它。
     @AppStorage("listSort") private var sortRaw: String = ListSort.recent.rawValue
 
+    /// 26 屏：长按哪一条、点了「删掉」、等着确认的那条。
+    @State private var pendingDelete: Record?
+
+    @Environment(\.modelContext) private var ctx
+
     private var sort: ListSort { ListSort(rawValue: sortRaw) ?? .recent }
 
     private var list: [Record] {
@@ -116,6 +121,16 @@ struct BrowseView: View {
                                 RecordCard(record: r) {
                                     path.append(.recordDetail(id: r.id))
                                 }
+                                // 26 屏那条「长按记录 → 删掉」的入口。
+                                // **长按，而不是每行摆一个删除按钮** —— 破坏性动作
+                                // 不该出现在一屏能划过的十几个位置上。
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        pendingDelete = r
+                                    } label: {
+                                        Label("删掉", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                         .padding(.horizontal, S.screen)
@@ -144,6 +159,34 @@ struct BrowseView: View {
         }
         .background(C.bg)
         .toolbar(.hidden, for: .navigationBar)
+        .overlay {
+            if let r = pendingDelete {
+                TrashConfirmOverlay(
+                    title: r.title,
+                    meta: r.trashMeta,
+                    reminderCount: r.liveReminderCount,
+                    onCancel: { pendingDelete = nil },
+                    onConfirm: {
+                        let target = r
+                        pendingDelete = nil
+                        moveToTrash(target)
+                    })
+            }
+        }
+        .animation(.easeOut(duration: 0.24), value: pendingDelete?.id)
+    }
+
+    /// 删掉之后给一条带「撤销」的轻提示。
+    ///
+    /// **撤销是「只确认一次」唯一的兜底。** 26 屏敢只做一次确认，
+    /// 靠的就是有退路；而退路得看得见才算数 —— 不能指望用户自己想起来
+    /// 去「设置 › 数据 › 回收站」里翻回来。
+    private func moveToTrash(_ r: Record) {
+        HerInfoStore.moveToTrash(r, in: ctx)
+        ToastCenter.shared.show("已移到回收站 · 30 天内可恢复",
+                                actionTitle: "撤销") {
+            HerInfoStore.restoreFromTrash(r, in: ctx)
+        }
     }
 }
 
@@ -258,6 +301,9 @@ struct RecordDetailView: View {
     @Environment(\.modelContext) private var ctx
     @Query private var records: [Record]
     @Query private var revisions: [Revision]
+
+    /// 26 屏：确认面板开着没有。
+    @State private var confirmingDelete = false
 
     init(path: Binding<[Route]>, recordID: String) {
         self._path = path
@@ -388,12 +434,10 @@ struct RecordDetailView: View {
                         // 删除。**刻意放在最后、且用危险色** ——
                         // 它离正文最远，因为手滑的成本取决于中间隔了多少东西。
                         Button {
-                            // 软删除：只置 deletedAt，不真删（26 / 27 / 29 屏）。
-                            // **必须 save()** —— 少了这一行，删除只活在内存里，
-                            // 重启一次记录就回来了，而用户只会以为是自己记错了。
-                            r.deletedAt = .now
-                            try? ctx.save()
-                            path.removeLast()
+                            // 26 屏：删除是破坏性动作，**先弹确认面板**。
+                            // 以前这里直接置 deletedAt 就 pop —— 手滑一下记录就进了回收站，
+                            // 而 26 屏那两条说明（会连带失去什么 / 有 30 天退路）一条都看不到。
+                            confirmingDelete = true
                         } label: {
                             Text("删除这条记录")
                                 .font(Typo.btn)
@@ -412,5 +456,29 @@ struct RecordDetailView: View {
         }
         .background(C.bg)
         .toolbar(.hidden, for: .navigationBar)
+        .overlay {
+            if confirmingDelete, let r = record {
+                TrashConfirmOverlay(
+                    title: r.title,
+                    meta: r.trashMeta,
+                    reminderCount: r.liveReminderCount,
+                    onCancel: { confirmingDelete = false },
+                    onConfirm: {
+                        confirmingDelete = false
+                        moveToTrash(r)
+                    })
+            }
+        }
+        .animation(.easeOut(duration: 0.24), value: confirmingDelete)
+    }
+
+    /// 删掉 + 一条带「撤销」的轻提示。撤销是「只确认一次」唯一的兜底。
+    private func moveToTrash(_ r: Record) {
+        HerInfoStore.moveToTrash(r, in: ctx)
+        path.removeLast()
+        ToastCenter.shared.show("已移到回收站 · 30 天内可恢复",
+                                actionTitle: "撤销") {
+            HerInfoStore.restoreFromTrash(r, in: ctx)
+        }
     }
 }

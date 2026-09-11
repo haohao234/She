@@ -389,7 +389,15 @@ enum HerInfoStore {
         return c
     }
 
-    /// 预览 / 首次启动的种子数据。文案与画布 01/02 屏逐字一致。
+    /// 演示用的种子数据。文案与画布 01/02 屏逐字一致。
+    ///
+    /// **只在两种情况下跑，都不面向真实用户：**
+    /// 1. SwiftUI 预览（`previewContainer()` 调它，好在 Xcode 里看到有内容的界面）；
+    /// 2. 命令行传 `-hi-seed` 启动（给截图 / 演示用）。
+    ///
+    /// 以前它是「首次启动的默认行为」—— 用户第一次打开 App 会看到
+    /// 一个叫「小满」的档案和 4 条记录，而「她叫什么」一次都没被问过。
+    /// 现在首次启动走 `OnboardingView`（画布 15/16 屏），这里不再自动调用。
     @MainActor
     static func seed(_ ctx: ModelContext) {
         ctx.insert(Profile(
@@ -460,5 +468,71 @@ enum HerInfoStore {
         guard let m = try? ctx.fetch(d).first else { return }
         m.isOn = false
         try? ctx.save()
+    }
+
+    // MARK: 回收站
+
+    /// 把一条记录移进回收站。
+    ///
+    /// **软删除 + 必须 `save()`。** 少了保存这一步，删除只活在内存里，
+    /// 重启一次记录就回来了 —— 而用户只会以为是自己记错了。
+    ///
+    /// 顺带把挂着的提醒一起停掉：26 屏那句后果说明（「挂着的提醒会一起取消」）
+    /// 是必须兑现的，否则删掉的记录还会照常在晚上响，而用户已经找不到它、
+    /// 也就不知道自己该去关什么。
+    ///
+    /// 反过来，**恢复时不把提醒打开** —— 恢复的是内容，不是当初设下的那个动作（27 屏）。
+    @MainActor
+    static func moveToTrash(_ record: Record, in ctx: ModelContext) {
+        record.deletedAt = .now
+        if let m = record.reminder, m.isOn {
+            m.isOn = false
+            Task { await ReminderService.shared.cancel(m) }
+        }
+        try? ctx.save()
+    }
+
+    @MainActor
+    static func restoreFromTrash(_ record: Record, in ctx: ModelContext) {
+        record.deletedAt = nil
+        try? ctx.save()
+    }
+
+    /// 回收站的 30 天到期清理，返回真正删掉的条数。
+    ///
+    /// **这是在兑现 27 屏印在屏幕上的那句话**：「30 天后自动清掉，清掉就找不回来了」。
+    /// 少了这一步，那句话就是假的，而且回收站会一直长大 ——
+    /// 一个永不清理的回收站，在用户眼里等于「你其实没删掉任何东西」。
+    ///
+    /// 必须在 `PhotoStore.purgeOrphans` **之前**跑：先让记录真的消失，
+    /// 它引用的图片才会在同一次启动里被扫成孤儿一起清掉。
+    @MainActor
+    @discardableResult
+    static func cleanupExpiredTrash(in ctx: ModelContext) -> Int {
+        let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
+        let d = FetchDescriptor<Record>(predicate: #Predicate { $0.deletedAt != nil })
+        guard let dead = try? ctx.fetch(d) else { return 0 }
+        var removed = 0
+        for r in dead {
+            guard let at = r.deletedAt, at < cutoff else { continue }
+            ctx.delete(r)
+            removed += 1
+        }
+        if removed > 0 { try? ctx.save() }
+        return removed
+    }
+}
+
+extension Record {
+    /// 还开着的提醒条数。一条记录最多挂一个提醒，所以只会是 0 或 1 ——
+    /// 26 屏靠它决定要不要显示「提醒会一起取消」那条后果。
+    var liveReminderCount: Int { reminder?.isOn == true ? 1 : 0 }
+
+    /// 26 屏确认面板上那行小字：「喜好 · 3月14日记下 · 挂着 1 个提醒」。
+    /// **它存在的唯一意义，是让用户在按下「删掉」之前再看一眼自己删的是什么。**
+    var trashMeta: String {
+        var parts = [cat.title, "\(createdAt.monthDayCN)记下"]
+        if liveReminderCount > 0 { parts.append("挂着 \(liveReminderCount) 个提醒") }
+        return parts.joined(separator: " · ")
     }
 }

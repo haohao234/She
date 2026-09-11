@@ -39,7 +39,28 @@ struct RootView: View {
     @State private var path: [Route] = []
     @Environment(\.modelContext) private var ctx
 
+    /// 15 / 16 两屏首次使用走完没有。
+    /// **用 `@AppStorage` 而不是查「有没有 Profile」** —— 用户完全可能在
+    /// 引导里填了名字之后又把它删掉，那时他不该被送回引导页重新走一遍。
+    @AppStorage("hasOnboarded") private var hasOnboarded = false
+
     var body: some View {
+        ZStack(alignment: .top) {
+            if hasOnboarded {
+                mainStack
+            } else {
+                OnboardingView(finished: $hasOnboarded)
+            }
+
+            // 轻提示挂在这一层，所以它跨屏存活：存完记录 pop 回列表之后，
+            // 那条「已记下 …」还在（22 屏拍的就是这个瞬间）。
+            ToastLayer()
+        }
+        .background(C.bg)
+        .animation(.easeOut(duration: 0.28), value: hasOnboarded)
+    }
+
+    private var mainStack: some View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
                 C.bg.ignoresSafeArea()
@@ -167,16 +188,12 @@ struct HomeView: View {
                     .pressDown()
 
                     Button { path.append(.profile) } label: {
-                        Circle()
-                            .fill(LinearGradient(colors: [C.primarySoft, C.primaryDeep],
-                                                 startPoint: .topLeading,
-                                                 endPoint: .bottomTrailing))
-                            .frame(width: 36, height: 36)
-                            .overlay(
-                                Text(String(profile?.name.prefix(1) ?? "满"))
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(.white)
-                            )
+                        // 用 AvatarView，而不是在这里再画一遍渐变圆 ——
+                        // 首页右上角这个头像是「她设过头像没有」唯一的常驻信号，
+                        // 画在两处就一定会有一处忘了跟着改。
+                        AvatarView(hash: profile?.avatarHash,
+                                   name: profile?.name ?? "她",
+                                   size: 36)
                     }
                     .pressDown()
                 }
@@ -358,10 +375,8 @@ struct HomeView: View {
     }
 }
 
-// MARK: - 占位屏
+// MARK: - 04 搜索 / 05 提醒（tab 根，也会被 push 进来）
 
-/// 骨架阶段先给出文件级占位，避免 `NavigationStack` 编译不过。
-/// 每个都用同一套导航行 + 空态，替换时只改 body。
 struct SearchView: View {
     @Binding var path: [Route]
     @Query(filter: #Predicate<Record> { $0.deletedAt == nil }) private var records: [Record]

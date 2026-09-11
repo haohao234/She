@@ -79,7 +79,7 @@ struct RecordEditorView: View {
                     .foregroundStyle(C.ink)
                 Spacer()
 
-                Button { save(); path.removeLast() } label: {
+                Button { saveAndLeave() } label: {
                     Text(isEditing ? "保存" : "完成")
                         .font(Typo.btn)
                         .foregroundStyle(C.primary)
@@ -196,8 +196,8 @@ struct RecordEditorView: View {
             // 底部保存按钮
             VStack(spacing: 0) {
                 Rectangle().fill(C.line).frame(height: 1)
-                Button(action: { save(); path.removeLast() }) {
-                    Text(isEditing ? "保存记录" : "保存记录")
+                Button(action: { saveAndLeave() }) {
+                    Text("保存记录")
                         .primaryButtonStyle()
                 }
                 .pressDown()
@@ -227,6 +227,7 @@ struct RecordEditorView: View {
     }
 
     // MARK: 配图
+
 
     /// 把相册里选中的图**落盘成文件**，换回 hash 存进记录。
     ///
@@ -333,6 +334,21 @@ struct RecordEditorView: View {
 
         syncReminder(for: target)
         try? ctx.save()
+    }
+
+    /// 手动保存：落盘 → 回上一屏 → 一条带「已记下什么」的轻提示（22 屏）。
+    ///
+    /// **提示只说「已记下什么」**，不报条数、不问评分、不提示「还差几条」——
+    /// 记录这件事一旦变成任务进度，就没人愿意记了。这也是它 3 秒就走的原因：
+    /// 它不是确认框，是一条通知。
+    ///
+    /// 只有手动保存才弹。自动保存每 0.8 秒就可能落一次盘，
+    /// 那个路径上弹提示会把屏幕变成闪光灯。
+    private func saveAndLeave() {
+        save()
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        path.removeLast()
+        ToastCenter.shared.show(t.isEmpty ? "已记下" : "已记下「\(t)」")
     }
 
     /// 提醒开关落到真实的 `Reminder` 上。

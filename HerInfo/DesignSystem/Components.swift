@@ -787,6 +787,301 @@ struct EmptyState: View {
     }
 }
 
+// MARK: - 轻提示（22 屏）
+
+/// 22 屏那条从顶部滑下来的深色横幅。
+///
+/// **它是一条通知，不是一个确认框。** 只说「已记下什么」，不报条数、
+/// 不问评分、不提示「还差几条」—— 记录这件事一旦变成任务进度，就没人愿意记了。
+/// 所以它 3 秒自动走，右边留一个「撤销」就够了。
+///
+/// 底色是**固定深色**，不跟随主题（浅色下 #2E2823 / 深色下 #3A342E，只差一档）：
+/// 它是浮在内容之上的，必须一眼和页面本身区分开。文字用暖白而不是纯白 ——
+/// 纯白在暖调深底上会发蓝。
+struct ToastBar: View {
+    let text: String
+    var actionTitle: String?
+    var onAction: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().fill(C.primary).frame(width: 20, height: 20)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+
+            Text(text)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(uiColor: UIColor(hex: 0xF3EEE8)))
+                .lineLimit(1)
+                .truncationMode(.tail)
+
+            Spacer(minLength: 0)
+
+            if let actionTitle, let onAction {
+                Button(action: onAction) {
+                    Text(actionTitle)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(C.primary)
+                }
+                .pressDown()
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 44)
+        .background(Color.dual(0x2E2823, 0x3A342E),
+                    in: RoundedRectangle(cornerRadius: R.toast, style: .continuous))
+        .shadow(color: .black.opacity(0.24), radius: 10, y: 5)
+    }
+}
+
+/// 轻提示的唯一出口。
+///
+/// **为什么需要一个全局的**：轻提示的触发点散在四个地方（存记录 / 删记录 /
+/// 恢复 / 改档案），而它必须只有一条 —— 同时滑下来两条叠在一起是最糟的观感。
+/// 谁后弹谁覆盖前一条，倒计时也跟着重置。
+///
+/// 刻意**不加 `@MainActor`**：加了之后，`ToastLayer` 在属性初始化器里取
+/// `ToastCenter.shared` 就落在非隔离上下文里（属性初始化器不继承 `body` 的隔离），
+/// Swift 5 模式下会一路报警告。它的每个方法本来就只在主线程被调用。
+final class ToastCenter: ObservableObject {
+    static let shared = ToastCenter()
+    private init() {}
+
+    @Published private(set) var text = ""
+    @Published private(set) var actionTitle: String?
+    @Published private(set) var visible = false
+
+    /// 每次弹出都换一个值。视图的动画用它驱动 ——
+    /// 同样的文案连着弹两次（比如连存两条同名记录）也要重新播一次动画。
+    @Published private(set) var token = 0
+
+    private var onAction: (() -> Void)?
+    private var hideTask: Task<Void, Never>?
+
+    func show(_ text: String,
+              actionTitle: String? = nil,
+              onAction: (() -> Void)? = nil) {
+        self.text = text
+        self.actionTitle = actionTitle
+        self.onAction = onAction
+        token += 1
+        withAnimation(.easeOut(duration: 0.26)) { visible = true }
+
+        hideTask?.cancel()
+        // 3 秒后自动收起。用 `Task { @MainActor in }` 而不是裸 `Task {}` ——
+        // 后者会跑到全局执行器上，在那里改 `@Published` 属于跨线程改 UI 状态。
+        hideTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            ToastCenter.shared.dismiss()
+        }
+    }
+
+    /// 点「撤销」。**先收起再执行** —— 反过来的话，撤销动作里如果又弹了一条
+    /// （比如撤销后提示别的话），会被紧接着的 `dismiss()` 一起收掉。
+    func performAction() {
+        let act = onAction
+        dismiss()
+        act?()
+    }
+
+    func dismiss() {
+        hideTask?.cancel()
+        hideTask = nil
+        withAnimation(.easeIn(duration: 0.2)) { visible = false }
+    }
+}
+
+/// 挂在 `RootView` 最上层的那一条。全 App 共用。
+struct ToastLayer: View {
+    @ObservedObject private var center = ToastCenter.shared
+
+    /// 显式 init 的理由见 `SegmentControl` —— `private` 存储属性会让
+    /// 逐成员初始化器降级成 `private`，于是 `RootView` 里那句 `ToastLayer()`
+    /// 会直接报 inaccessible（而报错位置在 RootView，不在这个文件里）。
+    init() {}
+
+    var body: some View {
+        Group {
+            if center.visible {
+                // 位置写死在 64pt（状态栏 44 + 20）：它不能跟着安全区走，
+                // 否则刘海机和老机型上会滑到两个完全不同的高度。
+                ToastBar(text: center.text,
+                         actionTitle: center.actionTitle,
+                         onAction: { center.performAction() })
+                    .padding(.horizontal, S.screen)
+                    .padding(.top, 64)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: center.token)
+        .allowsHitTesting(center.visible)
+    }
+}
+
+// MARK: - 删除二次确认（26 屏）
+
+/// 26 屏那块面板本身。外面还有遮罩，见 `TrashConfirmOverlay`。
+///
+/// 两条说明缺一不可，因为它们回答的是两个不同的问题：
+///   · 「挂着提醒会一起取消」= **后果**。用户怕的不是删除，是删完才发现提醒也没了
+///   · 「30 天内都能找回」= **承诺**。有退路，流程才敢只确认一次
+/// 少了上面那条，用户会在删完之后被吓一跳；少了下面那条，他就得停下来犹豫。
+struct TrashConfirmPanel: View {
+    let title: String
+    /// 「喜好 · 9 月 8 日记下 · 挂着 1 个提醒」。
+    let meta: String
+    /// > 0 才显示「会一起取消」那条。没有提醒却写「提醒会取消」，是凭空吓人。
+    let reminderCount: Int
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                Text("删掉这条记录？")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(C.ink)
+                Spacer(minLength: 0)
+                Button(action: onCancel) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15))
+                        .foregroundStyle(C.ink3)
+                        .frame(width: 28, height: 28)
+                }
+            }
+
+            // 被删的那条记录本身。**把它摆出来，而不是只问一句「确定吗」** ——
+            // 用户需要在按下之前再看一眼自己删的是什么。
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(C.ink)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(meta)
+                    .font(Typo.caption)
+                    .foregroundStyle(C.ink3)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(C.bg, in: RoundedRectangle(cornerRadius: R.input, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: R.input, style: .continuous)
+                    .strokeBorder(C.line, lineWidth: 1)
+            )
+
+            VStack(alignment: .leading, spacing: 10) {
+                if reminderCount > 0 {
+                    ConfirmNote(text: "这条记录挂着的提醒会一起取消。", tone: .consequence)
+                }
+                ConfirmNote(text: "删掉后 30 天内都能在回收站找回。", tone: .promise)
+            }
+
+            HStack(spacing: 10) {
+                Button(action: onCancel) { Text("先留着").secondaryButtonStyle() }
+                    .pressDown()
+
+                Button(action: onConfirm) {
+                    Text("删掉")
+                        .font(Typo.btn)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(C.danger, in: Capsule(style: .continuous))
+                }
+                .pressDown()
+            }
+
+            Text("回收站的入口在 设置 › 数据")
+                .font(Typo.caption)
+                .foregroundStyle(C.ink3)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(EdgeInsets(top: 16, leading: 20, bottom: 24, trailing: 20))
+        // 圆角只画上面两个 —— 下面两个角在屏幕外。用 `RoundedRectangle` 再让
+        // 宿主裁掉下缘，比 `UnevenRoundedRectangle` 少一层版本风险。
+        .background(C.card, in: RoundedRectangle(cornerRadius: R.sheet, style: .continuous))
+        .shadow(color: .black.opacity(0.16), radius: 14, y: -4)
+    }
+}
+
+/// 面板里那两条说明。颜色分开是有意的：
+/// 后果用砂色（提醒），承诺用暖色（主色）—— 一眼能分出「坏消息」和「别担心」。
+struct ConfirmNote: View {
+    enum Tone { case consequence, promise }
+
+    let text: String
+    let tone: Tone
+
+    private var icon: String {
+        switch tone {
+        case .consequence: return "exclamationmark.circle"
+        case .promise:     return "plus.circle"
+        }
+    }
+
+    private var fg: Color {
+        switch tone {
+        case .consequence: return Color(uiColor: UIColor(hex: 0x8A6532))
+        case .promise:     return C.primary
+        }
+    }
+
+    private var bg: Color {
+        switch tone {
+        case .consequence: return C.sand
+        case .promise:     return C.warm
+        }
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 13))
+                .foregroundStyle(fg)
+            Text(text)
+                .font(Typo.caption)
+                .foregroundStyle(fg)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(bg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// 遮罩 + 面板。挂在宿主屏最外层。
+///
+/// 遮罩用 `Color.black.opacity()` 而不是整个视图的 `.opacity()` ——
+/// 后者会把面板一起压淡，看起来像「半透明地浮着」。
+struct TrashConfirmOverlay: View {
+    let title: String
+    let meta: String
+    let reminderCount: Int
+    let onCancel: () -> Void
+    let onConfirm: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(0.34)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onCancel)
+
+            TrashConfirmPanel(title: title,
+                              meta: meta,
+                              reminderCount: reminderCount,
+                              onCancel: onCancel,
+                              onConfirm: onConfirm)
+                .transition(.move(edge: .bottom))
+        }
+    }
+}
+
 // MARK: - 分类色点
 
 /// 首页四条分类的入口。色点是这套设计的分类语言：一屏之内靠颜色分辨四类。

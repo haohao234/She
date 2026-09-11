@@ -229,12 +229,14 @@ final class ReminderService: NSObject {
         content.attachments = [att]
     }
 
-    /// 图片在沙盒里的位置：`Documents/Photos/<hash>.jpg`（见 Models.swift 的 Photo.hash）。
+    /// 图片在沙盒里的位置。
+    ///
+    /// **路径的唯一真相是 `PhotoStore.url(for:)`** —— 这里以前又自己拼了一遍
+    /// `Documents/Photos/<hash>.jpg`。两处一旦不一致，通知就没有配图，
+    /// 而那是典型的「不报错」的故障：通知照常响，只是缺一张图，
+    /// 没人会想到是路径拼错了。同一件事只应该有一个定义处。
     static func photoURL(_ hash: String) -> URL? {
-        let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let url = base.appendingPathComponent("Photos", isDirectory: true)
-                      .appendingPathComponent("\(hash).jpg")
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        PhotoStore.exists(hash) ? PhotoStore.url(for: hash) : nil
     }
 }
 

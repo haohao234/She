@@ -537,15 +537,15 @@ struct TrashView: View {
                                         Text(r.title)
                                             .font(Typo.cardTitle)
                                             .foregroundStyle(C.ink)
-                                        Text("删除于 \((r.deletedAt ?? .now).relativeCN)")
+                                        // **这一页最该突出的是「还剩几天」，不是「删了什么」** ——
+                                        // 回收站不是垃圾桶，是撤销窗口。用户来这一页时
+                                        // 真正想知道的是「我还来得及吗」。
+                                        Text("删除于 \((r.deletedAt ?? .now).relativeCN) · 还剩 \(daysLeft(r)) 天")
                                             .font(Typo.numCaption)
-                                            .foregroundStyle(C.ink3)
+                                            .foregroundStyle(daysLeft(r) <= 3 ? C.danger : C.ink3)
                                     }
                                     Spacer(minLength: 0)
-                                    Button {
-                                        r.deletedAt = nil        // 恢复 = 把 deletedAt 清掉
-                                        try? ctx.save()
-                                    } label: {
+                                    Button { restore(r) } label: {
                                         Text("恢复")
                                             .font(Typo.pillSel)
                                             .foregroundStyle(C.primary)
@@ -556,6 +556,35 @@ struct TrashView: View {
                                 }
                             }
                         }
+
+                        // 恢复说明。**必须写明「提醒不会跟着恢复」** ——
+                        // 恢复的是内容，不是当初设下的那个动作。
+                        // 不写的话，用户恢复完会去等一条永远不会响的提醒。
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 14))
+                                .foregroundStyle(C.primary)
+                            Text("恢复之后记录会回到原来的分类，但提醒不会跟着恢复 —— 需要的话去记录详情里重新打开。")
+                                .font(Typo.caption)
+                                .foregroundStyle(C.ink2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(14)
+                        .background(C.warm, in: RoundedRectangle(cornerRadius: R.input, style: .continuous))
+
+                        if items.count > 1 {
+                            Button { restoreAll() } label: {
+                                Text("全部恢复").secondaryButtonStyle()
+                            }
+                            .pressDown()
+                        }
+
+                        Text("回收站只在本机保存 · 换手机前记得先导出档案\n删除这件事，我们一律做成了可撤销的")
+                            .font(Typo.caption)
+                            .foregroundStyle(C.ink3)
+                            .multilineTextAlignment(.center)
+                            .lineSpacing(6)
+                            .frame(maxWidth: .infinity)
                     }
                     .padding(.horizontal, S.screen)
                     .padding(.vertical, 8)
@@ -564,5 +593,28 @@ struct TrashView: View {
         }
         .background(C.bg)
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    /// 删除那天起算的第 30 天。**算出来而不是存下来** ——
+    /// 存下来的数字过一夜就是错的（和「在一起多少天」同一个道理）。
+    private func daysLeft(_ r: Record) -> Int {
+        let deadline = Calendar.current.date(byAdding: .day, value: 30, to: r.deletedAt ?? .now) ?? .now
+        let left = Calendar.current.dateComponents([.day], from: .now, to: deadline).day ?? 0
+        return max(0, left)
+    }
+
+    private func restore(_ r: Record) {
+        HerInfoStore.restoreFromTrash(r, in: ctx)
+        ToastCenter.shared.show("已恢复「\(r.title)」", actionTitle: "撤销") {
+            // 撤销这一下就是「再删回去」。**不带确认** ——
+            // 用户刚刚在回收站里明确按了恢复，撤销的语义就是把那一步收回来。
+            HerInfoStore.moveToTrash(r, in: ctx)
+        }
+    }
+
+    private func restoreAll() {
+        let n = items.count
+        for r in items { HerInfoStore.restoreFromTrash(r, in: ctx) }
+        ToastCenter.shared.show("已恢复 \(n) 条")
     }
 }

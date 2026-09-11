@@ -30,6 +30,8 @@
 | 第 3 轮 | 1 个错 | 扩展通过后进到主 App：`BrowseView.swift:297` 的 `Pill(...)` 参数顺序不对（`tiny` 必须在 `tint` 后面） |
 | **第 4 轮** | **成功** | `** BUILD SUCCEEDED **` · error 0 · warning 0 · 产出 `HerInfo.app` |
 | **第 5 轮** | **成功（回归）** | 补上「配图」落盘层（`PhotoStore` + 6 个文件接线）后再编一次，仍然 0 error / 0 warning |
+| **第 6 轮** | **成功（回归）** | 文档同步（预检清单第 6 节 + 交接文档）后再编一次，全步骤绿 |
+| **第 7 轮** | 见 Actions | 引导屏 + 轻提示 + 删除二次确认 + 回收站（含 `ToastCenter` 这个跨屏单例）|
 
 **主 App 那一整批是一次通过的。** 三类事先担心的
 「只有编译器能裁决」的问题（`#Predicate` 捕获 / Swift 6 并发 / 自定义 `Layout`）
@@ -125,7 +127,8 @@ open HerInfo.xcodeproj
 | `Features/ReminderEditorView.swift` | 完成 | **32** 新建提醒 |
 | `Features/ProfileEditView.swift` | 完成 | **33** 编辑她的档案 |
 | `Features/ExportView.swift` | 完成 | **35** 导出档案 |
-| `Features/SecondaryViews.swift` | 结构到位 | 17 / 12 / 27 完整；23 / 13 完整 |
+| `Features/OnboardingView.swift` | 完成 | **15 / 16** 首次使用两屏（共用两步步骤条） |
+| `Features/SecondaryViews.swift` | 完成 | 17 / 12 / 23 / 13；**27 回收站**（还剩 N 天、恢复说明、全部恢复） |
 | `Services/PhotoStore.swift` | 完成 | 配图落盘层：内容寻址（SHA-256 前 8 字节）+ JPEG 压缩副本 + 降采样读 + 孤儿清理 |
 | `Services/ReminderService.swift` | 完成 | 通知 + 地理围栏，含 20 个区域上限处理 |
 | `Services/ExportService.swift` | 完成 | 三种格式都是真实现，不是占位 |
@@ -133,12 +136,18 @@ open HerInfo.xcodeproj
 | `HerInfoNotification/NotificationContentView.swift` | 完成 | **36** 展开态那三块：配图 / 元信息 / 五个胶囊 |
 | `HerInfoNotification/NotificationStyle.swift` | 完成 | 通知专用白阶透明度；零 hex，色值取自契约 |
 
-**覆盖了主流程 01→02→03→04→05、本轮新增的 32/33/34/35，
-以及 36 屏整套通知内容扩展（独立 target + 共享契约），
+**覆盖了主流程 01→02→03→04→05、首次使用 15→16、
+以及 22 轻提示 / 26 删除二次确认 / 27 回收站这三屏的交互壳，
+36 屏整套通知内容扩展（独立 target + 共享契约），
 加上设置链 12→35 / 12→27 / 12→13→23。**
 
-一共 18 个 Swift 源文件（主 App 14 + 扩展 3 + 两者共用的契约 1），
+一共 19 个 Swift 源文件（主 App 15 + 扩展 3 + 两者共用的契约 1），
 外加 2 份 `Info.plist`、1 份 `project.yml`、1 条 CI 流水线。
+
+> **首次启动不再写「示例数据」**。以前首次启动会插入一个叫「小满」的档案
+> 和 4 条记录 —— 用户第一次打开 App，看到的是别人的女朋友，而
+> 「她叫什么」这个问题一次都没被问过。现在首次启动走 `OnboardingView`（画布 15/16），
+> 种子数据只在 SwiftUI 预览和 `-hi-seed` 启动参数下跑。
 
 > **「配图」这条线在补 `PhotoStore` 之前是演出来的**：`PhotoGrid` 的「＋」往数组里塞的是
 > `"hash:new0"` 这种假字符串，`PhotoCell` 画的是分类渐变，33 屏「换一张头像」的按钮体是空的，
@@ -151,9 +160,8 @@ open HerInfo.xcodeproj
 剩下的是**同一模式的重复劳动**，不是新判断：
 
 - 06 空态 / 07 历史版本对比 / 08 键盘态 / 09-10 情绪打标
-- 15-16 首次使用（两个 Onboarding 页）
-- 21 首条记录引导 / 22 保存后轻提示 / 24 通知权限降级 / 26 删除二次确认
-- 28 搜索空态 / 29 回收站空态 / 30 搜索筛选面板
+- 21 首条记录引导（**只做「填一半」不做「替你写」**：标题预填、内容留白给一条示范）
+- 24 通知权限降级 / 28 搜索空态 / 29 回收站空态 / 30 搜索筛选面板
 
 每个都能照 `EditorView` / `ExportView` 的写法直接搬。
 
