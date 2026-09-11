@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>她的信息本 · 功能汇总与后续开发指南</title>
+<style>
+:root{
+  --bg:#F8F5F0; --card:#FFFFFF; --line:#EFE8E0; --line2:#EAE2D8; --sep:#F1EAE2;
+  --ink:#1F1E1B; --ink2:#5C5A55; --ink3:#948C82;
+  --primary:#C0614A; --primaryBg:#FAEDE6; --hiBg:#F7E0D6; --hiInk:#B0523C;
+  --danger:#B0523C; --sand:#8A6532; --sandBg:#F7F0E1;
+  --like:#C0614A; --trait:#B4874A; --care:#7C9070; --hate:#6C7C8C;
+  --shadow:0 1px 2px rgba(90,74,58,.06), 0 6px 18px rgba(90,74,58,.07);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; padding:0 0 80px; background:var(--bg); color:var(--ink);
+  font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  font-size:14px; line-height:1.75; -webkit-font-smoothing:antialiased;
+}
+.mono,code{font-family:"Inter",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+.wrap{max-width:920px; margin:0 auto; padding:0 24px}
+
+/* ── 头部 ── */
+header{padding:56px 0 28px}
+.eyebrow{font-size:12px; letter-spacing:.14em; color:var(--primary); font-weight:600}
+h1{font-size:30px; line-height:1.3; margin:10px 0 12px; letter-spacing:-.01em}
+.lede{color:var(--ink2); font-size:15px; margin:0 0 20px}
+.meta{display:flex; flex-wrap:wrap; gap:8px}
+.chip{
+  display:inline-block; padding:4px 11px; border-radius:100px; font-size:12px;
+  background:var(--card); border:1px solid var(--line2); color:var(--ink2);
+}
+.chip.ok{background:var(--primaryBg); border-color:transparent; color:var(--hiInk); font-weight:500}
+
+/* ── 卡片 ── */
+section{margin:34px 0}
+h2{
+  font-size:20px; margin:0 0 6px; letter-spacing:-.01em;
+  display:flex; align-items:center; gap:10px;
+}
+h2 .n{
+  font-family:"Inter",monospace; font-size:12px; color:#fff; background:var(--primary);
+  width:22px; height:22px; border-radius:7px; display:grid; place-items:center;
+  font-weight:600; flex:none;
+}
+h2 + .sub{color:var(--ink3); font-size:13px; margin:0 0 18px}
+h3{font-size:15px; margin:26px 0 10px; letter-spacing:-.01em}
+h4{font-size:13px; margin:0 0 6px}
+
+.card{
+  background:var(--card); border:1px solid var(--line); border-radius:18px;
+  padding:20px 22px; box-shadow:var(--shadow); margin-bottom:14px;
+}
+.card.tight{padding:16px 18px}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+.grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:14px}
+@media(max-width:720px){.grid2,.grid3{grid-template-columns:1fr}}
+
+p{margin:0 0 10px}
+p:last-child{margin-bottom:0}
+ul{margin:6px 0 10px; padding-left:20px}
+li{margin:5px 0}
+li::marker{color:var(--ink3)}
+b,strong{font-weight:600}
+a{color:var(--primary); text-decoration:none; border-bottom:1px solid var(--primaryBg)}
+
+/* ── 表格 ── */
+table{width:100%; border-collapse:collapse; font-size:13px; margin:10px 0}
+th{
+  text-align:left; font-weight:600; font-size:12px; color:var(--ink3);
+  padding:8px 10px; border-bottom:1px solid var(--line2); white-space:nowrap;
+}
+td{padding:9px 10px; border-bottom:1px solid var(--sep); vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.c{white-space:nowrap}
+td.num{font-family:"Inter",monospace; color:var(--ink3); white-space:nowrap}
+
+/* ── 分类色点 ── */
+.dot{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:7px; vertical-align:1px}
+.d-like{background:var(--like)} .d-trait{background:var(--trait)}
+.d-care{background:var(--care)} .d-hate{background:var(--hate)}
+
+/* ── 提示条 ── */
+.note{
+  border-radius:14px; padding:14px 16px; margin:12px 0; font-size:13px;
+  display:flex; gap:11px; align-items:flex-start;
+}
+.note .ic{flex:none; font-size:14px; line-height:1.7}
+.note.tip{background:var(--primaryBg); color:#7A3A29}
+.note.tip .ic{color:var(--primary)}
+.note.warn{background:var(--sandBg); color:#6B4E28}
+.note.warn .ic{color:var(--sand)}
+.note.alt{background:#F4F2EE; color:var(--ink2)}
+
+/* ── 步骤 ── */
+.steps{counter-reset:s; margin:14px 0 0; padding:0; list-style:none}
+.steps > li{
+  counter-increment:s; position:relative; padding:0 0 20px 42px; margin:0;
+  border-left:1px solid var(--line2); margin-left:13px;
+}
+.steps > li:last-child{border-left-color:transparent; padding-bottom:0}
+.steps > li::before{
+  content:counter(s); position:absolute; left:-14px; top:0;
+  width:27px; height:27px; border-radius:9px; background:var(--primary); color:#fff;
+  font-family:"Inter",monospace; font-size:12px; font-weight:600;
+  display:grid; place-items:center;
+}
+.steps h4{margin:2px 0 5px; font-size:14px}
+.steps p{color:var(--ink2); font-size:13px; margin:0 0 6px}
+
+/* ── 代码块 ── */
+pre{
+  background:#2E2823; color:#F3EEE8; border-radius:12px; padding:14px 16px;
+  font-size:12.5px; line-height:1.65; overflow-x:auto; margin:10px 0;
+  font-family:"Inter",ui-monospace,Menlo,Consolas,monospace;
+}
+pre .c{color:#9A9187}
+code{
+  background:var(--sep); padding:2px 6px; border-radius:5px; font-size:12.5px;
+  color:#7A3A29;
+}
+pre code{background:none; padding:0; color:inherit}
+
+/* ── 屏号引用 ── */
+.sn{
+  font-family:"Inter",monospace; font-size:11px; font-weight:600;
+  background:var(--hiBg); color:var(--hiInk); padding:1px 6px; border-radius:5px;
+  white-space:nowrap;
+}
+
+/* ── 页脚 ── */
+footer{
+  margin-top:56px; padding-top:22px; border-top:1px solid var(--line2);
+  color:var(--ink3); font-size:12px; display:flex; justify-content:space-between;
+  flex-wrap:wrap; gap:10px;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">她的信息本 · iOS</div>
+  <h1>功能汇总与后续开发指南</h1>
+  <p class="lede">
+    这个 App 现在能做什么、每一项对应哪一屏，以及你之后想改功能时该怎么提、怎么装、多久见效。
+  </p>
+  <div class="meta">
+    <span class="chip ok">已在 iPhone 上正常使用</span>
+    <span class="chip">iOS 17.7</span>
+    <span class="chip">22 个源文件 · 9962 行</span>
+    <span class="chip">36 屏设计稿全部落地</span>
+    <span class="chip">零第三方依赖 · 数据只在本机</span>
+  </div>
+</header>
+
+<!-- ══════════ 一、它是什么 ══════════ -->
+<section>
+  <h2><span class="n">1</span>它是什么</h2>
+  <p class="sub">一句话：把「她的事」记在一个只有你能看的地方，需要的时候替你记住。</p>
+
+  <div class="card">
+    <p>
+      这是给<b>一个人</b>用的私人记事本 —— 不是社交产品、不是情侣共享 App。
+      记的是关于「她」的事：喜欢什么、脾气怎样、在意什么、讨厌什么。
+      数据<b>全部存在你手机里</b>，不上传任何服务器，也没有账号体系。
+    </p>
+    <p>
+      它和普通备忘录的区别在于三件事：<b>①</b> 记的时候有四个固定分类帮忙归类；
+      <b>②</b> 每条记录都能挂提醒（到点响、或到你常去的地方响）；
+      <b>③</b> 改过的内容会留下历史版本，改错了能翻回去看。
+    </p>
+  </div>
+
+  <div class="grid3">
+    <div class="card tight">
+      <h4>📝 记</h4>
+      <p style="color:var(--ink2); font-size:13px; margin:0">
+        四分类 + 标签 + 最多 9 张配图，随手记下，不用想放哪
+      </p>
+    </div>
+    <div class="card tight">
+      <h4>🔔 提醒</h4>
+      <p style="color:var(--ink2); font-size:13px; margin:0">
+        定时（每周三 20:00）和场景（到公司就提醒），最多提前一天
+      </p>
+    </div>
+    <div class="card tight">
+      <h4>🕐 留痕</h4>
+      <p style="color:var(--ink2); font-size:13px; margin:0">
+        每次改动自动存一版，可以左右对比，也能恢复旧版
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 二、功能清单 ══════════ -->
+<section>
+  <h2><span class="n">2</span>功能清单</h2>
+  <p class="sub">按「你会怎么用它」分组，括号里是设计稿屏号。</p>
+
+  <h3>① 记录与管理</h3>
+  <div class="card">
+    <table>
+      <tr><th>功能</th><th>说明</th><th>屏号</th></tr>
+      <tr>
+        <td class="c"><b>四个固定分类</b></td>
+        <td>
+          <span class="dot d-like"></span><b>喜好</b> —— 她喜欢的东西<br>
+          <span class="dot d-trait"></span><b>性格与外貌</b> —— 她是什么样的人<br>
+          <span class="dot d-care"></span><b>在意的事</b> —— 她的身体、她在乎的点<br>
+          <span class="dot d-hate"></span><b>讨厌的事</b> —— 别踩的雷<br>
+          <span style="color:var(--ink3)">只有四个。多一个值就要多一套配色、多一段文案、多一条筛选项。</span>
+        </td>
+        <td class="num">02</td>
+      </tr>
+      <tr>
+        <td class="c"><b>新增 / 编辑记录</b></td>
+        <td>标题 + 正文 + 标签 + 配图。分类标签预选好，只管写内容</td>
+        <td class="num">03 / 31</td>
+      </tr>
+      <tr>
+        <td class="c"><b>配图</b></td>
+        <td>一条记录最多 <b>9 张</b>，可长按拖动排序；照片只存本地文件，按内容 hash 索引</td>
+        <td class="num">34</td>
+      </tr>
+      <tr>
+        <td class="c"><b>记录详情</b></td>
+        <td>正文 → 提醒 → 元信息 → 历史版本 → 删除。删除放最后且是唯一红字</td>
+        <td class="num">31</td>
+      </tr>
+      <tr>
+        <td class="c"><b>置顶</b></td>
+        <td>最多 <b>置顶 3 条</b>，最近置顶的排在最前</td>
+        <td class="num">25</td>
+      </tr>
+      <tr>
+        <td class="c"><b>排序</b></td>
+        <td>三种排序方式，只改「你看到的顺序」，不动记录本身</td>
+        <td class="num">25</td>
+      </tr>
+      <tr>
+        <td class="c"><b>删除与回收站</b></td>
+        <td>删除前会告诉你会连带失去什么；进回收站可 <b>30 天</b>内恢复；到期自动清掉</td>
+        <td class="num">26 / 27 / 29</td>
+      </tr>
+    </table>
+  </div>
+
+  <h3>② 找东西</h3>
+  <div class="card">
+    <table>
+      <tr><th>功能</th><th>说明</th><th>屏号</th></tr>
+      <tr>
+        <td class="c"><b>全局搜索</b></td>
+        <td>搜标题、正文、标签；命中词在正文里高亮（用底色，不用下划线 —— 中文密笔画下划线和字脚打架）</td>
+        <td class="num">04</td>
+      </tr>
+      <tr>
+        <td class="c"><b>分类筛选</b></td>
+        <td>面板上实时显示「会筛出几条」，按下之前就知道结果数量</td>
+        <td class="num">28 / 30</td>
+      </tr>
+      <tr>
+        <td class="c"><b>搜索历史</b></td>
+        <td>最近搜过的词存着；<b>不预置示例词</b>（摆出来等于说「你搜过这些」）</td>
+        <td class="num">04</td>
+      </tr>
+    </table>
+    <div class="note alt">
+      <span class="ic">i</span>
+      <div>
+        <b>排序（长期设定）和筛选（只活一次搜索）是分开存的两份东西。</b>
+        搜索面板上筛一下，不会把你列表的默认排序改掉。
+      </div>
+    </div>
+  </div>
+
+  <h3>③ 提醒</h3>
+  <div class="card">
+    <table>
+      <tr><th>功能</th><th>说明</th><th>屏号</th></tr>
+      <tr>
+        <td class="c"><b>定时提醒</b></td>
+        <td>仅一次 / 每天 / 每周 / 每月；可设置提前量（准时 / 10 分钟 / 1 小时 / 1 天）</td>
+        <td class="num">05 / 32</td>
+      </tr>
+      <tr>
+        <td class="c"><b>场景提醒</b></td>
+        <td>到某个地方就提醒（公司、花店…），默认半径 300 米</td>
+        <td class="num">05 / 32</td>
+      </tr>
+      <tr>
+        <td class="c"><b>通知上直接打标</b></td>
+        <td>锁屏通知长按展开，五个情绪胶囊直接在通知里点，不用开 App</td>
+        <td class="num">14</td>
+      </tr>
+      <tr>
+        <td class="c"><b>权限被拒后的兜底</b></td>
+        <td>通知权限被拒<b>不是错误是状态</b>（iOS 一辈子只问一次）。给一条通往系统设置的路，并承诺不追着弹窗</td>
+        <td class="num">24</td>
+      </tr>
+    </table>
+    <div class="note warn">
+      <span class="ic">⚠</span>
+      <div>
+        <b>场景提醒有数量上限。</b>iOS 限制单个 App 最多监听 <b>20 个</b>地理围栏 ——
+        所以只能绑少数高频点（比如公司、家），不是「想加多少加多少」。
+      </div>
+    </div>
+  </div>
+
+  <h3>④ 历史版本</h3>
+  <div class="card">
+    <table>
+      <tr><th>功能</th><th>说明</th><th>屏号</th></tr>
+      <tr>
+        <td class="c"><b>自动存版本</b></td>
+        <td>每次编辑保存自动 <code>版本+1</code>，页面上能看到「第 12 版」</td>
+        <td class="num">07</td>
+      </tr>
+      <tr>
+        <td class="c"><b>左右对比</b></td>
+        <td>两版并排看，<b>只有差异行加高亮</b>；旧版退到背景、新版往前跳</td>
+        <td class="num">07</td>
+      </tr>
+      <tr>
+        <td class="c"><b>恢复旧版</b></td>
+        <td>恢复 = <b>落成一个新版本</b>，不是回滚。当前内容不会丢，恢复本身也能再撤销</td>
+        <td class="num">07</td>
+      </tr>
+    </table>
+  </div>
+
+  <h3>⑤ 她的档案</h3>
+  <div class="card">
+    <table>
+      <tr><th>功能</th><th>说明</th><th>屏号</th></tr>
+      <tr><td class="c"><b>档案名片</b></td><td>名字、在一起的天数（自动算）、生日、城市、一句话、头像</td><td class="num">01 / 17</td></tr>
+      <tr><td class="c"><b>编辑档案</b></td><td>第一次只问名字和纪念日 —— 问太多人就退出去了</td><td class="num">15 / 16 / 33</td></tr>
+      <tr><td class="c"><b>首条引导</b></td><td>没有任何记录时给三张起手卡；引导只做「填一半」：标题替你定、标签替你选，<b>正文一个字都不预填</b></td><td class="num">06 / 21</td></tr>
+    </table>
+  </div>
+
+  <h3>⑥ 情绪打标</h3>
+  <div class="card">
+    <table>
+      <tr><th>功能</th><th>说明</th><th>屏号</th></tr>
+      <tr>
+        <td class="c"><b>三个大按钮</b></td>
+        <td>挺好 / 有点累 / 心情差 —— 1 秒完成，多了就快不起来</td>
+        <td class="num">09</td>
+      </tr>
+      <tr>
+        <td class="c"><b>五个档位（锁屏）</b></td>
+        <td>开心 / 累 / 低落 / 生气 / 平静 —— 通知栏那一行要塞下五个，位置决定它只能是五个</td>
+        <td class="num">14</td>
+      </tr>
+      <tr><td class="c"><b>打标后的建议</b></td><td>根据档位给一句该怎么做的提示</td><td class="num">10</td></tr>
+    </table>
+    <div class="note tip">
+      <span class="ic">▸</span>
+      <div>
+        <b>「自动记情绪」这件事在 iOS 上做不到，是刻意的设计边界。</b>
+        App 沙盒不允许读你的聊天记录，所以不存在「聊天里出现情绪词就自动打标」这种合法路径。
+        改成<b>你手动打标 + 系统级快捷入口</b> —— 快，而且不违规。
+      </div>
+    </div>
+  </div>
+
+  <h3>⑦ 系统级入口（不用打开 App 也能用）</h3>
+  <div class="card">
+    <table>
+      <tr><th>入口</th><th>怎么用</th><th>屏号</th></tr>
+      <tr><td class="c"><b>锁屏通知</b></td><td>通知展开后直接点情绪胶囊</td><td class="num">14</td></tr>
+      <tr><td class="c"><b>长按 App 图标</b></td><td>主屏长按图标 → 菜单里直接打标</td><td class="num">09</td></tr>
+      <tr><td class="c"><b>快捷指令</b></td><td>接进「快捷指令」App，可以配自动化</td><td class="num">09</td></tr>
+      <tr><td class="c"><b>分享扩展</b></td><td>在别的 App 里选中文字 → 分享 → 「她的信息本」，直接存成一条记录</td><td class="num">09</td></tr>
+    </table>
+    <div class="note alt">
+      <span class="ic">i</span>
+      <div>
+        <b>四个入口都是「入口只记意图，主 App 负责落库」。</b>
+        扩展是独立进程，两边同时写一个数据库会冲突，所以扩展只把内容丢进共享收件箱，
+        等你回到 App 时才真正存下来。
+      </div>
+    </div>
+  </div>
+
+  <h3>⑧ 导出与设置</h3>
+  <div class="card">
+    <table>
+      <tr><th>功能</th><th>说明</th><th>屏号</th></tr>
+      <tr><td class="c"><b>导出档案</b></td><td>三种格式：<b>JSON</b>（可再读回来）、<b>Markdown</b>（能贴进任何笔记软件）、<b>PDF</b>（按分类排版好的册子）</td><td class="num">35</td></tr>
+      <tr><td class="c"><b>外观</b></td><td>跟随系统 / 始终浅色 / 始终深色 —— <b>三选一，不是开关</b></td><td class="num">18 / 23</td></tr>
+      <tr><td class="c"><b>应用锁</b></td><td>用面容 / 指纹锁住（<b>开关界面已就位</b>）</td><td class="num">13</td></tr>
+      <tr><td class="c"><b>设置</b></td><td>档案入口、回收站入口、外观、锁、通知</td><td class="num">12</td></tr>
+    </table>
+    <div class="note warn">
+      <span class="ic">⚠</span>
+      <div>
+        <b>已知待补：两处「开关能拨、但还没接上」。</b>
+        应用锁的开关会记住状态、界面也在，但<b>打开 App 时还没有真的要求面容 ID</b>；
+        导出的面容验证同理（目前导出<b>一定会</b>验，不看那个开关）。
+        这两个是<b>接线没接完</b>，不是设计如此 —— 补法在
+        <code>编译预检清单.md</code>，属于小改动。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 三、技术底座 ══════════ -->
+<section>
+  <h2><span class="n">3</span>技术底座（你不必懂，但改功能时会用到）</h2>
+  <p class="sub">这一节是给「提需求」用的：知道边界在哪，就不会提做不了的事。</p>
+
+  <div class="grid2">
+    <div class="card tight">
+      <h4>技术选型</h4>
+      <ul style="font-size:13px; color:var(--ink2)">
+        <li>SwiftUI + SwiftData，<b>最低 iOS 17</b></li>
+        <li><b>零第三方依赖</b>（不装任何外部库）</li>
+        <li>三个 target：主 App + 通知扩展 + 分享扩展</li>
+        <li>仓库：<code>github.com/haohao234/She</code></li>
+      </ul>
+    </div>
+    <div class="card tight">
+      <h4>数据都在哪</h4>
+      <ul style="font-size:13px; color:var(--ink2)">
+        <li>记录、档案、提醒、情绪、历史版本 → 手机本地数据库</li>
+        <li>照片 → 手机本地文件（按内容 hash 命名）</li>
+        <li><b>不上传、不同步、没有服务器</b></li>
+        <li>换手机 / 重装 = 数据不跟随（导出 JSON 可以带走）</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="note warn">
+    <span class="ic">⚠</span>
+    <div>
+      <b>三条硬边界</b>（不是没做，是做不了）：<br>
+      <b>① 读不到你的聊天记录</b> —— iOS 沙盒不允许，任何 App 都不行。<br>
+      <b>② 场景提醒最多 20 个</b> —— iOS 对地理围栏的硬上限，超了会静默失效。<br>
+      <b>③ 免费账号签的包只活 7 天</b> —— 这是 Apple 的限制，靠自动续签绕过（见第 5 节）。
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 四、怎么改功能 ══════════ -->
+<section>
+  <h2><span class="n">4</span>后续改功能：完整流程</h2>
+  <p class="sub">你只需要做两件事：说清要什么、装新包。中间的编译我来跑。</p>
+
+  <div class="note tip">
+    <span class="ic">▸</span>
+    <div>
+      <b>核心机制：你不需要 Mac。</b>
+      代码推上 GitHub 后，云端会自动用 macOS 编译；编译结果直接回在网页上。
+      所以「改功能 → 拿到新包」这条链路，你的操作只有<b>双击一个脚本</b>和<b>下载安装</b>。
+    </div>
+  </div>
+
+  <h3>改一个功能的完整过程</h3>
+  <ol class="steps">
+    <li>
+      <h4>跟我说要改什么（用大白话就行）</h4>
+      <p>
+        比如「加一个『纪念日倒计时』」「提醒想支持农历」「导出加个 Word」。
+        <b>不用管技术细节</b>，说清「谁在什么时候会想用它、现在哪里别扭」比说实现方式有用得多。
+      </p>
+      <p style="color:var(--ink3)">
+        如果我判断这事和设计稿冲突、或者 iOS 做不到，我会直说并给替代方案 —— 不会闷头做完才告诉你。
+      </p>
+    </li>
+    <li>
+      <h4>我改代码 + 改设计稿 + 更新文档</h4>
+      <p>
+        这个项目一直是<b>三件交付物同步走</b>：设计稿、可交互原型、iOS 代码。
+        加一个屏的话三边都要动，我会一起做完 —— 只改代码会造成「文档说的和 App 不一样」，
+        那比没文档更糟。
+      </p>
+    </li>
+    <li>
+      <h4>本地先自查，再推上去</h4>
+      <p>
+        推之前我会跑 <b>7 份校验脚本</b>（近 200 项检查）—— 抓参数顺序、抓漏加的模型登记、
+        抓文档里悬空的链接、抓扩展数量对不对。能静态发现的问题绝不留给云端编译器。
+      </p>
+    </li>
+    <li>
+      <h4>你双击 <code>push-to-github.bat</code>，连按两次回车</h4>
+      <p>
+        脚本在 <code>她的信息本-iOS</code> 文件夹里。它自己找 git、自己重试网络。
+        <b>看到「成功」就行；失败就把屏幕上的字发我。</b>
+      </p>
+      <p style="color:var(--ink3)">
+        也可以我这边直接推 —— 但网上时通时断，所以脚本里加了自动重试，你用脚本更稳。
+      </p>
+    </li>
+    <li>
+      <h4>等 1～5 分钟，看 Actions 是绿还是红</h4>
+      <p>
+        绿 = 编译过了，可以下包。<b>红 = 把报错发我</b>（我能直接读到是哪一步、错在哪一行，
+        不用你翻日志）。
+      </p>
+    </li>
+    <li>
+      <h4>下新包、拖进 Sideloadly 重装</h4>
+      <p>
+        网页上点<b>最上面（最新）那次运行</b> → 下 <code>HerInfo-ipa</code> →
+        <b>解开 zip</b> → 拖里面的 <code>.ipa</code>（约 <b>1.15 MB</b>）。
+      </p>
+      <p>
+        <b>拖之前瞄一眼 Sideloadly 第一行</b> <code>Using IPA file:</code> ——
+        确认拖的是刚下的新包（这一个动作能省掉一整轮排查）。
+      </p>
+    </li>
+  </ol>
+
+  <div class="note alt">
+    <span class="ic">i</span>
+    <div>
+      <b>重装会不会丢数据？</b> 用同一个 Apple ID 覆盖安装，数据保留；
+      但如果 Sideloadly 的「自动 Bundle ID」重新生成了后缀，系统会当成另一个 App，数据就不跟过来。
+      所以<b>建议关掉 <code>Use automatic bundle ID</code></b>，手动固定一个 id —— 之后就一直是覆盖安装。
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ 五、7 天续签 ══════════ -->
+<section>
+  <h2><span class="n">5</span>⚠️ 每 7 天要留意的一件事</h2>
+  <p class="sub">这是目前唯一的「定期维护动作」，现在就该设好。</p>
+
+  <div class="card">
+    <p>
+      免费 Apple ID 签出来的包<b>只有 7 天有效期</b>。到期后 App 会<b>突然打不开</b> ——
+      图标还在，点一下就闪退，看起来像「App 坏了」。
+    </p>
+    <p>
+      <b>但它其实没坏</b>，只是签名过期。Sideloadly 能自动保住它：
+    </p>
+    <ul>
+      <li>打开 Sideloadly，勾上 <code>auto-refresh</code>（自动刷新）</li>
+      <li>之后只要<b>电脑和手机在同一个 Wi-Fi</b>（或者插着线），它会在到期前自动重新签好</li>
+    </ul>
+    <div class="note warn">
+      <span class="ic">⚠</span>
+      <div>
+        <b>万一真的打不开了：别卸载重装。</b>
+        卸载会把记过的内容一起清掉 —— 而数据是存在 App 沙盒里的，删了 App 就没了。
+        <b>打不开 ≠ 数据丢了</b>，重新签一次就好（这也是为什么要提前开自动续签）。
+      </div>
+    </div>
+  </div>
+
+  <div class="card tight">
+    <h4>想彻底摆脱 7 天限制？两条路</h4>
+    <table>
+      <tr><th>方式</th><th>效果</th><th>代价</th></tr>
+      <tr>
+        <td class="c"><b>付费开发者账号</b></td>
+        <td>签名有效期 <b>1 年</b>；还能签出带 App Group 的包（分享扩展那条线才完整）</td>
+        <td>¥688/年</td>
+      </tr>
+      <tr>
+        <td class="c"><b>借一台 Mac</b></td>
+        <td>可以直连手机调试、随时重装，也能在 Xcode 里直接跑</td>
+        <td>需要借到 Mac</td>
+      </tr>
+      <tr>
+        <td class="c">保持现状（推荐先用）</td>
+        <td>开自动续签后基本不用管</td>
+        <td>偶尔需要电脑和手机同网</td>
+      </tr>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════ 六、还能往哪走 ══════════ -->
+<section>
+  <h2><span class="n">6</span>接下来可以做什么（我的建议）</h2>
+  <p class="sub">按「先做哪个最值」排的，不必全做。</p>
+
+  <div class="card">
+    <table>
+      <tr><th>方向</th><th>具体能做什么</th><th>难度</th></tr>
+      <tr>
+        <td class="c"><b>先验证现状</b></td>
+        <td>
+          过一遍<b>预检清单第 6 节的 22 条</b>（特别是第 6~9 条配图管线、第 1/2/22 条 App Group）。
+          免费账号签的包可能<b>没带 App Group</b>，那「通知打标」「分享进来」这两条线就是哑的。
+          <b>先知道哪条通哪条不通，再决定补什么</b> —— 比盲目加功能值。
+        </td>
+        <td class="num">—</td>
+      </tr>
+      <tr>
+        <td class="c"><b>补日常使用缺口</b></td>
+        <td>
+          比如：记录支持搜索图片内容、提醒支持农历生日、导出加 Word、
+          档案页显示「距离她生日还有 N 天」。
+        </td>
+        <td class="num">小</td>
+      </tr>
+      <tr>
+        <td class="c"><b>多加几个「一键记」入口</b></td>
+        <td>
+          比如锁屏小组件、Apple Watch、Siri 语音记一条。
+          这几个都是 iOS 支持、而且和现有架构合得来的。
+        </td>
+        <td class="num">中</td>
+      </tr>
+      <tr>
+        <td class="c"><b>数据更稳</b></td>
+        <td>
+          定时自动导出备份到「文件」App；或者多设备同步（后者要 iCloud，会打破「数据不出本机」这条承诺，
+          <b>需要你先决定要不要</b>）。
+        </td>
+        <td class="num">中～大</td>
+      </tr>
+      <tr>
+        <td class="c"><b>上架 App Store</b></td>
+        <td>
+          要付费账号、要做隐私说明与审核材料。好处是彻底摆脱 7 天限制、家人朋友都能装。
+        </td>
+        <td class="num">大</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="note tip">
+    <span class="ic">▸</span>
+    <div>
+      <b>我的建议顺序：先花 20 分钟过一遍那 22 条</b>（步骤见
+      <code>编译预检清单.md</code> 第 6 节）—— 你现在 App 能用，但有些功能可能是<b>安静地没生效</b>：
+      不报错、只是没反应。先把这层摸清楚，后面的取舍才有依据。
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>她的信息本 · 功能汇总与后续开发指南</span>
+  <span>2026-09-11 · 配套：编译预检清单 · 编译操作指引 · 开发交接文档</span>
+</footer>
+
+</div>
+</body>
+</html>

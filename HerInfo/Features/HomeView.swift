@@ -47,6 +47,25 @@ struct RootView: View {
     /// 引导里填了名字之后又把它删掉，那时他不该被送回引导页重新走一遍。
     @AppStorage("hasOnboarded") private var hasOnboarded = false
 
+    /// 13 屏应用锁。**这个开关以前只被「自己」读写** ——
+    /// 设置页能拨、状态也存得住（`@AppStorage("appLock")`），但没有任何地方
+    /// 在打开 App 时读它，所以它是「能开但不锁」。
+    /// 这里把它接上：App 起来 / 回到前台时先过一遍面容或设备密码。
+    ///
+    /// 三个细节是刻意的：
+    /// ① `locked` 初始 `false`、在 `.task` 里立即置位 —— 不能写成 `= appLock`，
+    ///    因为 `@State` 的初值在 `@AppStorage` 读到的值之前就定了，会读到 false；
+    ///    而 `.task` 在首帧之后跑，所以锁面会「晚一帧」出现。为了不让人看到
+    ///    那一帧的真实内容，锁面本身就不透明（见 `AppLockCover`）。
+    /// ② 引导没走完不锁 —— 15/16 屏时 App 里还没有任何可保护的内容，
+    ///    一进来就弹面容只会让人莫名其妙。
+    /// ③ **回前台也要锁**（`scenePhase == .active`）。只在启动时锁的话，
+    ///    切出去看一眼再回来就绕过去了 —— 而「锁住她的信息」这件事，
+    ///    恰恰是在「别人拿到你手机」时才要生效的。
+    @AppStorage("appLock") private var appLock = false
+    @State private var locked = false
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         ZStack(alignment: .top) {
             if hasOnboarded {
@@ -58,9 +77,25 @@ struct RootView: View {
             // 轻提示挂在这一层，所以它跨屏存活：存完记录 pop 回列表之后，
             // 那条「已记下 …」还在（22 屏拍的就是这个瞬间）。
             ToastLayer()
+
+            // 13 屏的锁面。盖在最上层（含轻提示）—— 它的意义就是「谁都别看到」。
+            if hasOnboarded && locked {
+                AppLockCover { locked = false }
+                    .transition(.opacity)
+                    .zIndex(10)
+            }
         }
         .background(C.bg)
         .animation(.easeOut(duration: 0.28), value: hasOnboarded)
+        .animation(.easeOut(duration: 0.18), value: locked)
+        .task {
+            // 冷启动：按当前设置决定要不要立刻锁。
+            if hasOnboarded && appLock { locked = true }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            if hasOnboarded && appLock { locked = true }
+        }
     }
 
     private var mainStack: some View {
@@ -741,3 +776,83 @@ struct ReminderListView: View {
 
 // 日期格式统一放在 SecondaryViews.swift 末尾的 Extensions 区，
 // 避免多个文件各自定义 monthDayCN 造成重复符号。
+
+// MARK: - 13 屏 应用锁
+
+/// 锁面。
+///
+/// **它是不透明的整屏遮挡，不是一个半透明蒙层。** 这一点必须如此：
+/// `locked` 是在首帧之后由 `.task` / `scenePhase` 置位的，所以理论上
+/// 有一帧没有遮挡 —— 如果是蒙层，那一帧的真内容会透出来，锁就白上了。
+/// 全不透明 + 盖在最上层，才能保证「要么看不到，要么看到的是锁」。
+///
+/// 文案沿用 13 屏的那两句，只是动词从「开启」换成「解锁」——
+/// 同一个界面在两种状态下说话要一致，否则用户会以为自己点错了地方。
+struct AppLockCover: View {
+
+    /// 验过了，把锁交还给 RootView。
+    var onUnlock: () -> Void
+
+    @State private var failed = false
+    @State private var busy = false
+
+    var body: some View {
+        ZStack {
+            C.bg.ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                ZStack {
+                    Circle().fill(C.warm).frame(width: 72, height: 72)
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 30, weight: .light))
+                        .foregroundStyle(C.primary)
+                }
+
+                Text("她的信息本")
+                    .font(Typo.cardTitle)
+                    .foregroundStyle(C.ink)
+
+                Text(failed
+                     ? "没有通过验证。\n她的信息只有你能看，再试一次。"
+                     : "用面容 ID 打开。\n锁屏上收到的提醒不会显示具体内容。")
+                    .font(Typo.bodyS)
+                    .foregroundStyle(failed ? C.danger : C.ink3)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(6)
+
+                Button {
+                    Task { await unlock() }
+                } label: {
+                    Text(busy ? "验证中…" : "解锁")
+                        .primaryButtonStyle()
+                }
+                .pressDown()
+                .disabled(busy)
+                .padding(.horizontal, S.screen)
+                .padding(.top, 10)
+            }
+            .padding(.horizontal, S.screen)
+        }
+        // 进来就自动弹一次 —— 让用户去点「解锁」等于多一步。
+        // 失败后再把按钮显露出来，由他自己决定要不要重试。
+        .task { await unlock() }
+    }
+
+    /// 过一次生物识别。
+    ///
+    /// **失败不放行。** `BiometricGate.confirm` 对「用户取消」与「认证失败」
+    /// 都返回 false —— 这里同样一律留在锁面。宁可多试一次，
+    /// 也不要出现「按了取消反而进去了」这种事。
+    private func unlock() async {
+        guard !busy else { return }
+        busy = true
+        let ok = await BiometricGate.confirm(reason: "打开她的信息本")
+        busy = false
+        if ok {
+            failed = false
+            onUnlock()
+        } else {
+            failed = true
+        }
+    }
+}

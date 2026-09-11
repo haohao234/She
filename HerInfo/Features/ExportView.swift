@@ -26,6 +26,11 @@ struct ExportView: View {
     /// 它记下了用户的选择，却没有把版本交出去。这里补上。
     @Query private var revisions: [Revision]
 
+    /// 设置页那个「导出前验证面容 ID」。**键名必须与设置页逐字相同**
+    /// （`SecondaryViews.swift` 里也是 `exportNeedsFaceID`），
+    /// 否则就成了两个各存各的开关 —— 又是同一个坑的第三种形态。
+    @AppStorage("exportNeedsFaceID") private var exportNeedsFaceID = true
+
     @State private var scope: ExportScope = .all
     @State private var format: ExportFormat = .pdf
     @State private var cat: Category = .like
@@ -218,10 +223,18 @@ struct ExportView: View {
     private func runExport() {
         working = true
         Task {
-            // ① 面容 ID 挡一道。「设备无生物识别」时退化到设备密码，
-            //    而不是直接放行 —— 放行等于这条提示是假的。
-            let ok = await BiometricGate.confirm(reason: "导出她的档案")
-            guard ok else { await MainActor.run { working = false }; return }
+            // ① 面容 ID 挡一道 —— **但要尊重设置里的开关**。
+            //
+            //    `exportNeedsFaceID` 以前和「历史版本」那处是同一种毛病：
+            //    开关记得住、界面也在，但没人读它，于是关掉也会验、等于开关是假的。
+            //    默认值是 true，所以关掉之前的行为一模一样（不会有人的习惯被改掉）。
+            //
+            //    「设备无生物识别」时退化到设备密码，而不是直接放行 ——
+            //    放行等于这条提示是假的。
+            if exportNeedsFaceID {
+                let ok = await BiometricGate.confirm(reason: "导出她的档案")
+                guard ok else { await MainActor.run { working = false }; return }
+            }
 
             // ② 真导出
             let url = try? await ExportService.shared.export(
