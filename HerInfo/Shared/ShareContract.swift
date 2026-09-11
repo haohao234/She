@@ -104,6 +104,10 @@ enum HIShare {
 
         /// 标题 = 首行，超过 `titleLimit` 截断加省略号。
         ///
+        /// **首行是一个网址时，标题取域名。** 「她发的那个链接」是分享进来最常见的东西之一，
+        /// 而 `https://www.xiaohongshu.com/discovery/item/66f…` 在列表里根本认不出来 ——
+        /// 域名一眼就知道是哪儿的。正文仍然是完整的那条网址，一个字没少。
+        ///
         /// 只有一行时，标题与正文会是同一句 —— **这是刻意的**：
         /// 另一种做法是把首行从正文里摘掉，可那样「一句话的分享」
         /// 存下来就只剩空正文了，而空正文的记录在列表里看着像坏的。
@@ -113,6 +117,12 @@ enum HIShare {
                 .first
                 .map(String.init) ?? text
             let base = first.isEmpty ? text : first
+
+            // `contains("://")` 是必需的：`URL(string:)` 对「随便一句话」也会返回
+            // 一个相对 URL（host 为 nil），只看 host 会把正常文案也引到分支里来。
+            if base.contains("://"), let host = URL(string: base)?.host(), !host.isEmpty {
+                return host
+            }
             return base.count <= titleLimit ? base : String(base.prefix(titleLimit)) + "…"
         }
 
