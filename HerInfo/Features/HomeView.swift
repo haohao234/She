@@ -71,7 +71,7 @@ struct RootView: View {
                     switch tab {
                     case .home:     HomeView(path: $path)
                     case .category: BrowseView(path: $path)
-                    case .search:   SearchView(path: $path)
+                    case .search:   SearchView(path: $path, onCancel: { tab = .home })
                     case .remind:   ReminderListView(path: $path)
                     }
                 }
@@ -100,7 +100,8 @@ struct RootView: View {
                 case .reminderNew(let rid):
                     ReminderEditorView(path: $path, recordID: rid)
                 case .search:
-                    SearchView(path: $path)
+                    // 被 push 上来时，「取消」= 退回上一层。
+                    SearchView(path: $path, onCancel: { path.removeLast() })
                 case .recordDetail(let id):
                     RecordDetailView(path: $path, recordID: id)
                 case .versionHistory(let id):
@@ -385,8 +386,45 @@ struct HomeView: View {
 
 struct SearchView: View {
     @Binding var path: [Route]
+
+    /// 「取消」按下去做什么。**由外壳决定**，因为答案取决于它是怎么来的：
+    /// 被 push 进来时是「退回上一层」，作为 tab 根时是「回首页」。
+    /// 写在里面就只能二选一，另一种情况下那个按钮会变成假动作。
+    let onCancel: () -> Void
+
     @Query(filter: #Predicate<Record> { $0.deletedAt == nil }) private var records: [Record]
+
     @State private var q = ""
+
+    /// 「只看某一类」。nil = 全部。
+    /// **它是分类范围（04 屏），不是 30 屏那三组条件** ——
+    /// 两者在界面上挨着，但一个是「在哪些分类里找」，
+    /// 另一个是「找出来的怎么收窄」，混成一个会说不清。
+    @State private var scope: Category?
+
+    /// 最近搜索词。用 `\u{1F}` 拼串存，不落库。
+    ///
+    /// **不预置任何示例词。** 04 画布上那四枚（白玫瑰 / 生日 / 忌口 / 雷点）
+    /// 是「用过一阵之后的样子」，不是出厂状态 —— 首启就摆出来，
+    /// 等于告诉用户「你搜过这些」，而其实一次都没搜过。
+    /// 这也是当初删掉「小满」那条示例数据同一个判断。
+    @AppStorage("hi.search.recent") private var recentRaw = ""
+    private var recent: [String] {
+        recentRaw.components(separatedBy: "\u{1F}").filter { !$0.isEmpty }
+    }
+
+    /// 面板里**正在编辑**的条件。
+    @State private var draft = SearchFilter.standard
+    /// 已经**按下去生效**的条件。nil = 这次搜索没有套筛选。
+    ///
+    /// 两份状态是这一屏的关键：面板里改来改去都不该影响列表，
+    /// 只有点了「看 N 条结果」才生效。合成一份的话，
+    /// 用户每点一枚胶囊列表就抖一次，而点遮罩想「算了」也回不去。
+    @State private var applied: SearchFilter?
+    @State private var showFilter = false
+
+    @FocusState private var focused: Bool
+    @State private var didAutoFocus = false
 
     /// 这一屏既是「搜索」tab 的根，也会被 push 进来。
     /// **根的时候不能再有返回键** —— 对空数组调 `removeLast()` 是直接崩，
@@ -395,39 +433,241 @@ struct SearchView: View {
         path.isEmpty ? nil : { path.removeLast() }
     }
 
+    // MARK: 命中与呈现
+
+    /// 搜索命中：**分类范围 + 搜索词**。
+    ///
+    /// 刻意**不含** 30 屏那三组条件 —— 「已筛掉 M 条」里的 M 说的正是
+    /// 「被那三组砍掉了多少」，分子分母都得建立在「命中」上。
+    private var hits: [Record] {
+        records.filter { r in
+            if let scope, r.cat != scope { return false }
+            guard !q.isEmpty else { return true }
+            return r.title.localizedStandardContains(q)
+                || r.body.localizedStandardContains(q)
+        }
+    }
+
+    /// 真正显示的列表。没套筛选时按「最近编辑」—— 搜索结果默认
+    /// 就该是最近提到过的排前面，这也是原型里 `renderResults` 的默认口径。
+    private var shown: [Record] {
+        guard let applied else {
+            return hits.sorted { ($0.updatedAt, $0.id) > ($1.updatedAt, $1.id) }
+        }
+        return applied.sorted(hits.filter { applied.accepts($0) })
+    }
+
+    /// 面板底部那个「会筛出几条」。**与 `shown` 用同一个 `accepts`** ——
+    /// 各算各的迟早会对不上，而「按之前说 3 条、按下去出 5 条」
+    /// 比不给预览更伤信任。
+    private var draftPreview: Int {
+        hits.filter { draft.accepts($0) }.count
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            NavRow("搜索", onBack: backAction)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    SField(placeholder: "搜索喜好、忌口、雷点…", text: $q)
-                        .padding(.horizontal, S.screen)
+            searchBar
 
-                    let hits = records.filter {
-                        q.isEmpty ? true
-                        : $0.title.localizedStandardContains(q)
-                          || $0.body.localizedStandardContains(q)
+            ScrollView {
+                VStack(alignment: .leading, spacing: S.innerGapL) {
+                    if !recent.isEmpty {
+                        hintRow("最近搜索", actionTitle: "清空") { recentRaw = "" }
+
+                        FlowLayout(spacing: S.rowGap) {
+                            ForEach(recent, id: \.self) { term in
+                                Pill(text: term, style: .normal) {
+                                    q = term
+                                    voidFilter()          // 换词 = 条件作废
+                                    focused = false
+                                }
+                            }
+                        }
+                    }
+
+                    Text("只看某一类")
+                        .font(Typo.captionM)
+                        .foregroundStyle(C.ink3)
+
+                    FlowLayout(spacing: S.rowGap) {
+                        Pill(text: "全部", style: scope == nil ? .selected : .normal) {
+                            scope = nil
+                            voidFilter()
+                        }
+                        ForEach(Category.allCases) { c in
+                            Pill(text: c.title, style: scope == c ? .selected : .normal) {
+                                scope = c
+                                voidFilter()
+                            }
+                        }
                     }
 
                     if hits.isEmpty && !q.isEmpty {
+                        // 28 屏。这里**不出现结果统计行与「筛选」** ——
+                        // 一条都没有的时候，给筛选入口是把人往死路上引。
                         EmptyState(symbol: "magnifyingglass",
                                    title: "没找到「\(q)」",
-                                   message: "换个说法试试，或者新建一条记录把它记下来")
+                                   message: "它可能还没被记下来，或者你记的时候用的是别的说法。")
+                            .padding(.top, S.screen)
                     } else {
+                        SearchResultHeader(shown: shown.count,
+                                           dropped: hits.count - shown.count,
+                                           isFiltered: applied != nil,
+                                           onFilter: {
+                                               draft = applied ?? .standard
+                                               showFilter = true
+                                           })
+
                         VStack(spacing: S.innerGapL) {
-                            ForEach(hits) { r in
-                                RecordCard(record: r) { path.append(.recordDetail(id: r.id)) }
+                            ForEach(shown) { r in
+                                RecordCard(record: r,
+                                           onTap: { path.append(.recordDetail(id: r.id)) },
+                                           highlight: q.isEmpty ? nil : q)
                             }
                         }
-                        .padding(.horizontal, S.screen)
                     }
                 }
-                .padding(.top, 8)
+                .padding(.horizontal, S.screen)
+                .padding(.top, 12)
                 .padding(.bottom, 24)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .background(C.bg)
         .toolbar(.hidden, for: .navigationBar)
+        .overlay {
+            if showFilter {
+                SearchFilterOverlay(
+                    draft: $draft,
+                    previewCount: draftPreview,
+                    onApply: {
+                        applied = draft
+                        showFilter = false
+                        focused = false
+                    },
+                    onClear: {
+                        draft = .standard
+                        applied = nil        // 「重置」是**回到出厂**，不是「变空」
+                    },
+                    onDismiss: { showFilter = false })   // 点遮罩：只关面板，不套用
+            }
+        }
+        .animation(.easeOut(duration: 0.24), value: showFilter)
+        .onChange(of: q) { _, _ in voidFilter() }
+        .onSubmit(of: .search) { remember(q) }
+        .task {
+            // 只自动聚焦一次。每次 appear 都聚焦的话，
+            // 从记录详情退回来会再把键盘弹起来，把刚看过的结果全挡住。
+            guard !didAutoFocus else { return }
+            didAutoFocus = true
+            // 等推入动画走完再聚焦。立刻置 `focused = true` 的话，
+            // 输入框可能还没进视图树，那一次赋值会被丢掉 ——
+            // 表现就是「有时候键盘自己弹出来、有时候不弹」，最难查的那种。
+            try? await Task.sleep(for: .milliseconds(320))
+            focused = true
+        }
+    }
+
+    // MARK: 搜索栏（04 / 08 屏）
+
+    /// 返回箭头 + 输入框 + 取消。
+    ///
+    /// **输入框那圈主色描边就是 08 屏的「键盘态」。** 它不只是好看：
+    /// 这一屏有两个可以「退」的东西（回上一层 / 清掉搜索词），
+    /// 描边把「现在在编辑的是这个框」说清楚，用户才敢确定
+    /// 那个 × 清掉的是词、而不是退出这一屏。
+    private var searchBar: some View {
+        HStack(spacing: S.rowGap) {
+            if let back = backAction {
+                Button(action: back) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(C.ink)
+                        .frame(width: 30, height: 44)
+                }
+                .pressDown()
+            }
+
+            HStack(spacing: S.rowGap) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(C.ink3)
+
+                TextField("搜索喜好、忌口、雷点…", text: $q)
+                    .font(Typo.body)
+                    .foregroundStyle(C.ink)
+                    .focused($focused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+
+                if !q.isEmpty {
+                    Button { q = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(C.ink3.opacity(0.55))
+                            .frame(width: 26, height: 26)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 40)
+            .background(C.card, in: Capsule(style: .continuous))
+            .overlay(
+                Capsule(style: .continuous)
+                    .strokeBorder(focused ? C.primary : C.line2,
+                                  lineWidth: focused ? 1.5 : 1)
+            )
+
+            Button(action: onCancel) {
+                Text("取消")
+                    .font(Typo.bodyS)
+                    .foregroundStyle(C.ink2)
+                    .padding(.vertical, 8)
+            }
+            .pressDown()
+        }
+        .padding(.horizontal, S.screen)
+        .padding(.top, 6)
+        .padding(.bottom, 10)
+    }
+
+    // MARK: 小件
+
+    private func hintRow(_ title: String, actionTitle: String,
+                         action: @escaping () -> Void) -> some View {
+        HStack {
+            Text(title)
+                .font(Typo.captionM)
+                .foregroundStyle(C.ink3)
+            Spacer(minLength: 0)
+            Button(action: action) {
+                Text(actionTitle)
+                    .font(Typo.captionM)
+                    .foregroundStyle(C.ink3)
+                    .padding(.vertical, 4)
+            }
+            .pressDown()
+        }
+    }
+
+    /// 只要搜索条件一变，这一轮的临时筛选就作废。
+    ///
+    /// 这是 30 屏的规矩：筛选只负责「这一次搜索」。
+    /// 让它活着跨过一次改词，用户下次就会看到「我明明搜别的词，
+    /// 怎么还是只剩这 3 条」——然后开始怀疑数据丢了。
+    private func voidFilter() {
+        applied = nil
+        draft = .standard
+    }
+
+    /// 记一条最近搜索。去重后放最前，最多留 6 条 ——
+    /// 再多会把「只看某一类」挤到一屏之外，而那一排的使用频率更高。
+    private func remember(_ term: String) {
+        let t = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        var list = recent.filter { $0 != t }
+        list.insert(t, at: 0)
+        recentRaw = list.prefix(6).joined(separator: "\u{1F}")
     }
 }
 

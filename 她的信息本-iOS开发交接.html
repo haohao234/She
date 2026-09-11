@@ -1229,17 +1229,27 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
 
   <div class="grid g2">
     <div class="card pad">
-      <h4>照搬就能完成的（还剩 3 屏）</h4>
+      <h4>照搬即可的那批 · 已全部落地</h4>
       <ul class="tight">
-        <li><b>30</b> 筛选面板 —— 一次性草稿状态，不落库；照 <span class="mono-s">SecondaryViews.swift</span> 里 27 的写法搬</li>
-        <li><b>08</b> 键盘态 —— 已由「搜索独立成屏」的设计<b>规避</b>（<span class="mono-s">HomeView.swift:208</span>），
-            输入框聚焦态在 <span class="mono-s">HITextField</span> 里；<b>没有独立屏，也不需要有</b></li>
-        <li>其余 <b>06 / 24 / 28 / 29</b> 也早已落地：06 空态在 <span class="mono-s">BrowseView</span>（标题按分类换、
-            起手卡只在全新时给）、24 在 <span class="mono-s">SecondaryViews</span>、
-            28 / 29 各是一处 <span class="mono-s">EmptyState</span> —— 待办清单曾比实际落后一步</li>
-        <li><b>07</b> 历史版本对比 —— 已实现（<span class="mono-s">VersionHistoryView.swift</span>）：
-            差异按<b>行</b>用计数池算（不取最长公共子序列），「恢复」是<b>把旧快照落成一个新版本</b>、不是回滚，
-            所以恢复前的内容仍在历史里、恢复本身也可逆</li>
+        <li>原先列在这里的 <b>30 筛选面板</b>（<span class="mono-s">SearchFilterView.swift</span>）、
+            <b>07 历史版本对比</b>（<span class="mono-s">VersionHistoryView.swift</span>）、
+            以及 <b>06 / 24 / 28 / 29</b> 都已经写好</li>
+        <li><b>08 键盘附件栏</b>是唯一还差的：底部按钮不被键盘挡住这件事已经是好的
+            （保存条在 <span class="mono-s">ScrollView</span> 下方，SwiftUI 的键盘避让会把它顶上去），
+            缺的是键盘上方那排「分类 / 标签 / 提醒」快捷胶囊
+            —— 少了它，填完标题想改分类就得先收键盘、滚上去、再等键盘弹回来。
+            （画布上还有一枚「记录时间」，但这一项在数据模型里不存在 ——
+            记的是 <span class="mono-s">createdAt</span> / <span class="mono-s">updatedAt</span>，
+            没有「这条是什么时候的事」这个字段，做之前要先定这个字段。）</li>
+      </ul>
+        <li><b>07 的一句提醒</b>：差异按<b>行</b>用计数池算（不取最长公共子序列），
+            「恢复」是<b>把旧快照落成一个新版本</b>、不是回滚 ——
+            所以恢复前的内容仍在历史里，恢复本身也可逆</li>
+        <li><b>30 的一句提醒</b>：搜索页上有三份「筛选」——25 屏的排序是<b>长期偏好</b>（写回设置），
+            30 屏的条件<b>只活一次搜索</b>。把后者当设置存起来，用户会发现
+            「随手筛了一下，列表的默认排序被改了」；所以它一改搜索词就自动作废</li>
+        <li><b>面板里那行条数不是装饰</b>：它和主按钮上的 N 必须与列表
+            <b>共用同一个判断</b>，否则「按之前说 3 条、按下去出 5 条」比不给预览更伤信任</li>
       </ul>
     </div>
     <div class="card pad">

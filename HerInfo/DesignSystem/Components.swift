@@ -354,10 +354,14 @@ struct RecordCard: View {
     let record: Record
     var onTap: (() -> Void)?
 
+    /// 搜索命中词。非空时把标题与正文里的这一小段标出来（04 屏）。
+    /// 默认 nil —— 列表页（02 / 05）不需要它，传了才是搜索。
+    var highlight: String? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(record.title)
+                Text(highlighted(record.title, highlight))
                     .font(Typo.cardTitle)
                     .foregroundStyle(C.ink)
                     .lineLimit(1)
@@ -376,7 +380,7 @@ struct RecordCard: View {
             }
 
             if !record.body.isEmpty {
-                Text(record.body)
+                Text(highlighted(record.body, highlight))
                     .font(Typo.bodyS)
                     .foregroundStyle(C.ink2)
                     .lineSpacing(6)
@@ -1115,6 +1119,39 @@ struct CategoryDot: View {
 }
 
 // MARK: - 工具
+
+/// 把命中的那段词标出来（04 屏记录卡上那几处浅底）。
+///
+/// 用 `AttributedString` 的**背景色**，不是描边、不是下划线：
+///
+///  · 描边会在中文笔画密集的地方把字糊掉（「玫瑰」两字描一圈就成一团）
+///  · 下划线和汉字的字脚打架，13px 下看着像排版错位
+///  · 一块浅底是唯一在 13px 中文上仍然读得清、且不改变字形的做法
+///
+/// `term` 为空、或正文里根本没有它时**原样返回**。
+/// 绝不退化成「给整句加底色」——那会让「命中在哪里」这件事彻底失效，
+/// 而搜索页最该回答的就是这个问题。
+///
+/// 匹配规则刻意与搜索用的 `localizedStandardContains` 对齐
+/// （忽略大小写与变音符）。两边不一致就会出「搜得到、但高亮不出来」，
+/// 那比不高亮更让人怀疑结果。
+func highlighted(_ text: String, _ term: String?) -> AttributedString {
+    var out = AttributedString(text)
+    guard let term, !term.isEmpty else { return out }
+
+    let opts: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
+    var from = text.startIndex
+    while from < text.endIndex,
+          let hit = text.range(of: term, options: opts, range: from..<text.endIndex) {
+        if let lo = AttributedString.Index(hit.lowerBound, within: out),
+           let hi = AttributedString.Index(hit.upperBound, within: out) {
+            out[lo..<hi].backgroundColor = C.hiBg
+            out[lo..<hi].foregroundColor = C.hiInk
+        }
+        from = hit.upperBound
+    }
+    return out
+}
 
 extension Date {
     /// 「3 天前」「今天」「上周」。列表页的时间列全都用它。
