@@ -961,12 +961,17 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
       <tr>
         <td><b>契约只写一遍</b></td>
         <td>
-          <span class="mono-s">Shared/NotificationContract.swift</span> 同时属于两个 target 的 Compile Sources，
+          <span class="mono-s">Shared/NotificationContract.swift</span> 同时属于<b>三个</b> target 的 Compile Sources
+          （主 App + 通知扩展 + 分享扩展），
           且<b>只依赖 Foundation 与 UserNotifications</b>（不 import SwiftData / SwiftUI）。
           分类 id、动作 id、userInfo 的键、App Group 名、五个情绪档、12 个共用色值，全在这里。
+          <br>分享扩展引它不是为了那几个类型，<b>是为了那个 App Group 名与 12 个色值</b> ——
+          共享容器只写一遍；写两遍的表现是「分享进来的东西静默丢失」（扩展往 A 容器写、主 App 从 B 容器读）。
           <br>在 <span class="mono-s">project.yml</span> 里，这个「同时属于」是写死的：
-          同一个路径出现在两个 target 的 <span class="mono-s">sources</span> 下 ——
+          同一个路径出现在三个 target 的 <span class="mono-s">sources</span> 下 ——
           <b>手工勾漏一个的可能性被消除掉了</b>。
+          <br>另一份 <span class="mono-s">Shared/ShareContract.swift</span> 属于<b>两个</b> target
+          （主 App + 分享扩展），它反过来<b>引用</b>上面那个 App Group 名，不重写字符串。
         </td>
         <td>
           两边各写一遍就一定会分叉 —— 而分叉的表现是
@@ -1003,7 +1008,8 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
   <div class="codebar">
     <div class="t">Shared/NotificationContract.swift</div>
   </div>
-<pre><code><span class="cm">// 两个 target 的 Compile Sources 都要勾上；只 import Foundation + UserNotifications</span>
+<pre><code><span class="cm">// 三个 target（主 App + 通知扩展 + 分享扩展）的 Compile Sources 都要勾上
+// 只 import Foundation + UserNotifications</span>
 <span class="kw">enum</span> HINotify {
     <span class="kw">static let</span> appGroup = <span class="st">"group.com.herinfo.app"</span>
     <span class="kw">static let</span> reminderCategory = <span class="st">"HI_REMIND"</span>   <span class="cm">// 必须与扩展 Info.plist 逐字一致</span>
@@ -1355,7 +1361,7 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
       </div>
       <div class="callout info" style="margin-top:12px">
         <b>14 / 36 锁屏通知已经不在这张清单里了。</b>
-        两个 target 的代码、共用的契约文件、Info.plist 的六个键、
+        三个 target 的代码、两份共用的契约文件、三份 Info.plist 的关键键、
         以及主 App 侧的排程与收件箱对接都已写完，
         连「哪个键漏了会白做」都写进了下一节。剩下的是<b>编译</b>，不是设计。
       </div>
