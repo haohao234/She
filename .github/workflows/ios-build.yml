@@ -49,6 +49,17 @@ jobs:
           echo "--- 生成的工程 ---"
           ls -d *.xcodeproj
 
+      # ── 为什么是 Release 而不是 Debug ─────────────────────────
+      # 一开始这里写的是 Debug（编译更快），但那会让产物**装上却跑不起来**：
+      # Xcode 16 给 Debug 配置默认开了一个「调试动态库」
+      # （ENABLE_DEBUG_DYLIB，为 SwiftUI 预览服务）—— 实测包里躺着
+      # `HerInfo.debug.dylib` **7.7 MB**，而主可执行文件只剩 **71 KB 的壳**。
+      # 那个壳靠 @rpath 在运行时加载 dylib，于是：
+      #   · 侧载工具要额外把那个 dylib 也签一遍，多一处会失败的地方；
+      #   · 真机启动要先解析 @rpath，侧载场景下路径未必对得上。
+      # 真机验证要的是「能装、能跑」，不是「编译快」，所以换成 Release。
+      # ENABLE_DEBUG_DYLIB=NO 是第二层保险 —— Release 本来就不带，
+      # 显式写出来是为了**防止哪天有人把配置改回 Debug**。
       - name: 编译
         id: build
         run: |
@@ -56,9 +67,10 @@ jobs:
           xcodebuild build \
             -project HerInfo.xcodeproj \
             -scheme HerInfo \
-            -configuration Debug \
+            -configuration Release \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            ENABLE_DEBUG_DYLIB=NO \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -131,6 +143,56 @@ jobs:
           zip -qry "$IPA" Payload
           echo "打好：$IPA"
           ls -lh "$IPA"
+
+      # ── 拆包自检（不然缺陷会一路走到手机上）────────────────────
+      # 下面两项都是**编译全绿也照样存在**的问题，只有把包拆开才看得见。
+      # 它们的共同点是：造出来的包「看起来正常」，装的时候才拒。
+      #
+      # ① 版本键缺失 —— 三个 target 都开 GENERATE_INFOPLIST_FILE，
+      #    而 MARKETING_VERSION / CURRENT_PROJECT_VERSION 没设时，
+      #    生成出来的是空值，于是这两个键**根本不存在**（不报错）。
+      #    本工程实测过一次，且 CFBundleVersion 是安装校验的必填项。
+      # ② Debug 配置的调试动态库 —— 见上面「为什么是 Release」那段。
+      #
+      # 放在上传之前：坏的包**不该变成用户能下载的 artifact**。
+      # 用户是照着指引去点 Artifacts 的人，他不会拆包看版本键。
+      - name: 校验 IPA 内容（版本键 / 调试动态库）
+        if: success()
+        run: |
+          APP=$(find build/Build/Products -maxdepth 2 -name "*.app" -type d | head -1)
+          FAIL=0
+
+          echo "=========================================="
+          echo " 版本键（应为主 1.0 / 构建 1）"
+          echo "=========================================="
+          for b in "$APP" "$APP"/PlugIns/*.appex; do
+            [ -d "$b" ] || continue
+            NAME=$(basename "$b")
+            SHORT=$(plutil -extract CFBundleShortVersionString raw "$b/Info.plist" 2>/dev/null || echo "")
+            BUILD=$(plutil -extract CFBundleVersion raw "$b/Info.plist" 2>/dev/null || echo "")
+            if [ -z "$SHORT" ] || [ -z "$BUILD" ]; then
+              echo "::error::$NAME 缺版本键（Short='$SHORT' Build='$BUILD'）—— 查 project.yml 的 MARKETING_VERSION / CURRENT_PROJECT_VERSION"
+              FAIL=1
+            else
+              echo "  OK   $NAME   $SHORT ($BUILD)"
+            fi
+          done
+
+          echo ""
+          echo "=========================================="
+          echo " 调试动态库（Release 构建不应有）"
+          echo "=========================================="
+          if find "$APP" -name "*.debug.dylib" | grep -q .; then
+            echo "::error::包里带着 *.debug.dylib —— 这是 Debug 配置的产物。侧载要多签一道、真机启动还要解析 @rpath。查 xcodebuild 的构建配置。"
+            find "$APP" -name "*.debug.dylib" -exec ls -lh {} \;
+            FAIL=1
+          else
+            echo "  OK   没有调试动态库"
+          fi
+          EXEC=$(plutil -extract CFBundleExecutable raw "$APP/Info.plist" 2>/dev/null || echo "HerInfo")
+          echo "  主可执行文件：$(ls -lh "$APP/$EXEC" | awk '{print $5}')  ($EXEC)"
+
+          exit $FAIL
 
       - name: 上传 IPA
         if: success()

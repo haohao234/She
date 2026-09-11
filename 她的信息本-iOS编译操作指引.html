@@ -676,14 +676,25 @@ warning 总数：11</pre>
         它是一个绿色小程序，不装系统服务。
       </p>
 
-      <h4>第 3 步 · 把 IPA 下下来</h4>
+      <h4>第 3 步 · 把 IPA 下下来（这一小步有个坑）</h4>
       <ol class="how">
         <li>打开 <code>github.com/haohao234/She/actions</code>，点最新那次<b>绿色勾</b>的 run。</li>
-        <li>页面拉到最下面找 <b>Artifacts</b> 区，下载 <b>HerInfo-ipa</b> —— 会得到一个 zip，解开就是
-          <code>HerInfo-&lt;提交号&gt;-unsigned.ipa</code>。</li>
+        <li>页面拉到最下面找 <b>Artifacts</b> 区，下载 <b>HerInfo-ipa</b>。</li>
         <li><b>Artifacts 必须登录 GitHub 才能下</b>，仓库是公开的也一样（这是 GitHub 的规矩，不是权限没给）。
           手机上直接点会下不动，用电脑浏览器登录后下。</li>
       </ol>
+      <div class="note warn">
+        <span class="ic">⚠</span>
+        <div>
+          <b>这东西要解压两次，拖错一层就会报 <code>Invalid file</code>。</b>
+          GitHub 的 Artifacts 自己是个 zip；把<b>它</b>解开，里面才是我们要的
+          <code>HerInfo-&lt;提交号&gt;-unsigned.ipa</code>。
+          <br>→ <b>要拖进 Sideloadly 的是那个 <code>.ipa</code></b>；
+          不是 <code>HerInfo-ipa.zip</code>，也不是被解压开的 <code>Payload</code> 文件夹。
+          <br>→ 顺手把它放进<b>一个纯英文路径</b>，比如 <code>C:\ipa\</code> ——
+          路径里有中文也是报 <code>Invalid file</code> 的常见原因。
+        </div>
+      </div>
       <div class="note alt">
         <span class="ic">i</span>
         <div>
@@ -694,7 +705,20 @@ warning 总数：11</pre>
         </div>
       </div>
 
-      <h4>第 4 步 · 装</h4>
+      <h4>第 4 步 · 先切到本地 Anisette Server（国内基本必做）</h4>
+      <p class="tiny">
+        Sideloadly 跟苹果服务器打交道时，需要一组由 <b>Anisette Server</b> 生成的参数。
+        它<b>默认用官方那个远程服务器</b> —— 那个要捐赠才能用，而且在国内常常连不上。
+        连不上的表现是<b>签名还没开始就失败</b>，日志里会出现 <code>Obtaining team ID</code>
+        之类的字样，以及一些看不懂的十六进制错误码。这一步花两分钟，能省掉后面一大圈排查。
+      </p>
+      <ol class="how">
+        <li>点界面上的 <b>Advanced Options</b> 展开高级选项。</li>
+        <li>找到 <b>Anisette Server</b> 那一栏，点 <b>Download</b> 把本地服务下下来（一次性）。</li>
+        <li>下完在左侧选中 <b>Local</b> —— <b>这一步必须点</b>，只下载不切换等于没做。</li>
+      </ol>
+
+      <h4>第 5 步 · 装</h4>
       <ol class="how">
         <li>iPhone 用数据线连上电脑，手机上点「<b>信任此电脑</b>」。</li>
         <li>打开 Sideloadly，把那个 <code>.ipa</code> <b>拖进窗口</b>。</li>
@@ -703,7 +727,7 @@ warning 总数：11</pre>
         <li>它会要<b>两次验证码</b>（双重认证），按手机上收到的填。<b>这是正常的，不是出错。</b></li>
       </ol>
 
-      <h4>第 5 步 · 手机上还要开两个开关（漏了会「装上了却打不开」）</h4>
+      <h4>第 6 步 · 手机上还要开两个开关（漏了会「装上了却打不开」）</h4>
       <ol class="how">
         <li><b>开发者模式</b>：<kbd>设置 › 隐私与安全性 › 开发者模式</kbd> → 打开 →
           <b>手机会要求重启一次</b>。iOS 16 及以上必须有这一步，而且这个开关
@@ -721,7 +745,41 @@ warning 总数：11</pre>
         </div>
       </div>
 
-      <h4>万一失败：按报错分两类</h4>
+      <h4>万一失败：先按报错原文找</h4>
+
+      <div class="note warn">
+        <span class="ic">⚠</span>
+        <div>
+          <b><code>Sideloading failed! Invalid file</code> / <code>Install failed: Guru Meditation …</code>
+          —— 最常撞的一个。</b>
+          它<b>不是</b>「苹果拒绝了你的包」，而是在说<b>「我读不出我手上这个东西」</b>
+          （那句十六进制只是 Sideloadly 自己的内部编号，不是诊断信息）。
+          按下面这张表逐条排，<b>多数在前两条就好了</b>。
+        </div>
+      </div>
+      <table>
+        <tr><td>1</td><td><b>拖错东西了</b> —— 必须拖解压后的 <code>.ipa</code>。拖 <code>HerInfo-ipa.zip</code>、或者把那个 zip 改名成 <code>.ipa</code>，都会报这个（因为里面没有 <code>Payload</code> 这一层）。<br><span class="tiny">最容易犯的一条，先看它。</span></td></tr>
+        <tr><td>2</td><td><b>Anisette 没切到 Local</b>（第 4 步）—— 这个失败报的<b>也是</b> <code>Invalid file</code>，很容易误以为是包的问题。国内网络下它是高发项。</td></tr>
+        <tr><td>3</td><td><b>文件没下全</b> —— 中断过的下载，zip 能打开但解压缺东西。<b>重新下一次</b>；下完先自己解压一遍，能解出 <span class="mono">Payload</span> 文件夹才算好。</td></tr>
+        <tr><td>4</td><td><b>路径里有中文或空格</b> —— 把 <code>.ipa</code> 挪到 <code>C:\ipa\</code> 这种纯英文目录再拖进去。</td></tr>
+        <tr><td>5</td><td><b>Sideloadly 版本太旧</b> —— 到官网 <code>sideloadly.io</code> 下最新的。苹果那边一改，旧版本就会读不懂返回的东西。</td></tr>
+        <tr><td>6</td><td><b>换网络试</b> —— 关掉代理，或者改用手机热点。这个错在国外论坛上有一模一样的十六进制码，当事人试遍手里所有 IPA 都没用，<b>最后是换网络解决的</b>。</td></tr>
+        <tr><td>7</td><td><b>还不行，就把扩展去掉再试</b> —— Sideloadly 高级选项里有 <b>Remove App Extensions</b>（也可以解开 IPA、删掉 <span class="mono">Payload/HerInfo.app/PlugIns</span> 再压回去）。<br><span class="tiny"><b>代价写清楚</b>：去掉扩展 = 通知打标与分享两条线<b>彻底</b>没得验。但在免费账号下它们<b>本来就是哑的</b>（App Group 带不上），所以这一步换来的是「主 App 至少装得上、能跑」——是否值得由你定。</span></td></tr>
+      </table>
+
+      <div class="note alt">
+        <span class="ic">i</span>
+        <div>
+          <b>包这一侧的问题已经堵掉了。</b>上面那个版本的包里其实有<b>两个真毛病</b>：
+          三个 bundle 都缺 <code>CFBundleVersion</code>（安装校验的必填项），
+          而且它是 Debug 配置 —— 带着一个 <b>7.7 MB 的调试动态库</b>，
+          主程序只剩 <b>71 KB 的壳</b>。
+          现在流水线改成 <b>Release</b> 构建、补齐版本号，
+          并且<b>多了一步拆包自检</b>：这两样再出问题，<b>CI 会直接红，
+          坏包不会变成你能下载的 artifact</b>。
+        </div>
+      </div>
+
       <div class="two">
         <div class="box bad">
           <h4>报 application-groups</h4>
@@ -747,8 +805,11 @@ warning 总数：11</pre>
       <div class="note alt">
         <span class="ic">i</span>
         <div>
-          卡住就把 Sideloadly 的<b>安装日志</b>整段贴回来 —— 它比界面上那句提示详细得多。
-          界面里那句通常是「Failed to code sign」，真正的线索在日志里。
+          上面七条都排完还是不行，就把 Sideloadly 的<b>完整日志</b>整段贴回来 ——
+          点右下角那个按钮能展开。它比界面上那两行详细得多。
+          <br>贴的时候<b>把那两行原文一起带上</b>：<code>Sideloading failed!</code> 后面跟的
+          <b>那句话</b>（比如 <code>Invalid file</code>）比一串十六进制有用得多 ——
+          十六进制是 Sideloadly 内部的编号，同一句话在不同的十六进制码下面都出现过。
         </div>
       </div>
 

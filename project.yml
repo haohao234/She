@@ -42,6 +42,18 @@ settings:
 
     CODE_SIGN_STYLE: Automatic
 
+    # ── 版本号：**必须显式给** ──────────────────────────────────
+    # 三个 target 都开着 GENERATE_INFOPLIST_FILE（见各自的 settings），
+    # 那个开关会拿这两个 build setting 往 Info.plist 里写
+    # CFBundleShortVersionString / CFBundleVersion —— 但**它俩没设时，
+    # 生成出来是空值，于是「这两个键干脆不存在」，而不是报错。**
+    #
+    # 后果正好卡在真机安装上：CFBundleVersion 是安装校验的必填项。
+    # 本工程实测过一次 —— 打出来的 IPA 里三个 bundle 全都没有这两个键，
+    # 而编译一路全绿。（现在流水线里有一条拆包断言守着它，见 ios-build.yml。）
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
 targets:
 
   # ----------------------------------------------------------
