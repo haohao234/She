@@ -29,11 +29,17 @@
 | 第 2 轮 | 1 个错 | `dismissNotification()` 这个名字不存在，正确是 `dismissNotificationContentExtension()` |
 | 第 3 轮 | 1 个错 | 扩展通过后进到主 App：`BrowseView.swift:297` 的 `Pill(...)` 参数顺序不对（`tiny` 必须在 `tint` 后面） |
 | **第 4 轮** | **成功** | `** BUILD SUCCEEDED **` · error 0 · warning 0 · 产出 `HerInfo.app` |
+| **第 5 轮** | **成功（回归）** | 补上「配图」落盘层（`PhotoStore` + 6 个文件接线）后再编一次，仍然 0 error / 0 warning |
 
-**主 App 那 5500 行是一次通过的。** 三类事先担心的
+**主 App 那一整批是一次通过的。** 三类事先担心的
 「只有编译器能裁决」的问题（`#Predicate` 捕获 / Swift 6 并发 / 自定义 `Layout`）
 一个都没报出来 —— 它们只是被 `SWIFT_VERSION 5.0` 和非严格并发按住了，
 不是不存在。详见 `编译预检清单.md` 第 3.4 节（含三个错误各自的根因与那一条可复用的教训）。
+
+> 第 5 轮值得单说一句：**三个编译错误没有一个是在云端发现的，全被本地校验提前拦住了** ——
+> `check-swift.js` 抓出 `PhotoCell` / `AvatarView` 有 `private` 存储属性却没显式 `init`
+> （跨文件构造会 `inaccessible`），`check-argorder.py` 盯着参数顺序。
+> 这就是「把能静态判的东西留给自己、只把真正需要编译器的东西送上去」的收益。
 
 以后再推代码，只剩两步：
 

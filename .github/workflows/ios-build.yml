@@ -31,7 +31,11 @@ jobs:
     runs-on: macos-15
 
     steps:
-      - uses: actions/checkout@v4
+      # v4 系列的运行时是 Node 20，GitHub 已经在告警「Node.js 20 is deprecated」，
+      # 并把它强制跑在 Node 24 上 —— 这条告警会挂在 check run 的注解里，
+      # 和我们真正要看的「Swift 编译错误」混在一起。升到 v5（Node 24）消掉它：
+      # 这条流水线是唯一的编译信号，注解区应该只留编译器的声音。
+      - uses: actions/checkout@v5
 
       - name: 环境信息
         run: |
@@ -81,7 +85,7 @@ jobs:
 
       - name: 保存完整日志
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: build-log
           path: build.log
