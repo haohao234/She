@@ -11,6 +11,14 @@
 
 * text=auto eol=lf
 
+# 例外：批处理必须是 CRLF。
+# 这不是洁癖 —— cmd.exe 的 `goto` / `call :label` 在 LF 行尾的文件里
+# 会找不到标签：**出错分支全部静默失效，而正常路径照跑**，极难发现。
+# （本机的 push-to-github.bat 已加入 .gitignore，不受这里影响，
+#   但它一旦被写出来就必须是 CRLF。check-guide.py 会守住这一点。）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
 # 二进制文件不参与行尾转换
 *.png binary
 *.jpg binary
