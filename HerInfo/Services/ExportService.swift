@@ -38,6 +38,9 @@ final class ExportService {
                           includeVersions: includeVersions,
                           includeReminders: includeReminders)
                 .write(to: url, atomically: true, encoding: .utf8)
+            // 图片是 JSON 之外的东西：base64 塞进去会让文件涨约三分之一，
+            // 而且塞完就再也没法用任何图片工具打开。跟 JSON 并排拷一份。
+            if includePhotos { copyPhotos(records, beside: url) }
 
         case .markdown:
             // Markdown 只写「有几版」，不把每一版正文铺开 ——
@@ -55,6 +58,38 @@ final class ExportService {
         }
 
         return url
+    }
+
+    /// 把引用的配图拷到导出文件旁边。
+    ///
+    /// **为什么必须真拷一份，而不是「JSON 里留个 hash 让他自己去沙盒找」**：
+    /// 用户拿到文件之后会用「文件」App 把它拖到 U 盘 / 发到微信 / 存进网盘 ——
+    /// 拖走的只有他勾中的那个文件。图还留在 App 沙盒里的话，
+    /// 这份 JSON 换到新手机上就是一堆指向空气的 hash，
+    /// 而注释里那句「换机时按 hash 重新关联」也就成了一句空话。
+    ///
+    /// 目录名取 `她的信息本-20260911-1130 配图`：与文件并排、名字对得上，
+    /// 用户在「文件」里一眼看得出这两样是一起的。
+    private func copyPhotos(_ records: [Record], beside fileURL: URL) {
+        let hashes = Set(records.flatMap { $0.photos.map(\.hash) })
+        guard !hashes.isEmpty else { return }
+
+        let base = fileURL.deletingPathExtension().lastPathComponent
+        let dir = fileURL.deletingLastPathComponent()
+            .appendingPathComponent("\(base) 配图", isDirectory: true)
+
+        let fm = FileManager.default
+        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        for h in hashes {
+            let src = PhotoStore.url(for: h)
+            guard fm.fileExists(atPath: src.path) else { continue }
+            let dst = dir.appendingPathComponent(src.lastPathComponent)
+            // 覆盖上一次导出的同一个 hash。文件名相同就代表内容一模一样
+            // （内容寻址），所以覆盖不会丢掉任何东西。
+            try? fm.removeItem(at: dst)
+            try? fm.copyItem(at: src, to: dst)
+        }
     }
 
     private func exportDirectory() throws -> URL {
@@ -104,7 +139,8 @@ final class ExportService {
         /// 版本号写进文件，换机导回时能判断格式是否兼容。
         let schemaVersion: Int
         /// **导出的是「数据」，不是「文件路径」。**
-        /// 图片单独放在同名文件夹里，这里只留 hash —— 换机时按 hash 重新关联。
+        /// 图片由 `copyPhotos` 拷到并排的「…配图」文件夹里，这里只留 hash ——
+        /// 换机时按 hash 重新关联。
         let records: [Rec]
     }
 

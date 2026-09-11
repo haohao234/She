@@ -13,6 +13,8 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
+import PhotosUI
 
 struct RecordEditorView: View {
     @Binding var path: [Route]
@@ -34,6 +36,12 @@ struct RecordEditorView: View {
     @State private var version = 1
     @State private var loaded = false
     @State private var saveState: SaveState = .idle
+
+    /// 相册选择器的选中结果。**选完立刻落盘换成 hash，原图不留** ——
+    /// 这一层如果留着 PhotosPickerItem，就等于把「原图」带进了数据模型，
+    /// 而 PhotosPickerItem 换台设备就失效了，存它没有任何意义。
+    @State private var picked: [PhotosPickerItem] = []
+    @State private var pickingPhotos = false
 
     /// 上一次落盘时的内容指纹。**它决定「要不要涨版本」** ——
     /// 没有它的话，点一下输入框再离开也能涨一版，
@@ -121,9 +129,11 @@ struct RecordEditorView: View {
                     }
 
                     // —— 34 屏的图片字段：紧跟标题 ——
+                    // 组件只画格子，「从相册取图」这一步归这里 ——
+                    // 把 PhotosUI 塞进设计系统会让它绑死一个平台能力。
                     FieldBlock(label: "图片",
                                caption: photoHashes.isEmpty ? nil : "\(photoHashes.count)/\(Photo.maxPerRecord)") {
-                        PhotoGrid(hashes: $photoHashes)
+                        PhotoGrid(hashes: $photoHashes, onAdd: { pickingPhotos = true })
                         Text("长按可以拖动排序 · 最多 \(Photo.maxPerRecord) 张")
                             .font(Typo.caption)
                             .foregroundStyle(C.ink3)
@@ -206,6 +216,45 @@ struct RecordEditorView: View {
         .onChange(of: body_) { _, _ in scheduleAutoSave() }
         .onChange(of: cat) { _, _ in scheduleAutoSave() }
         .onChange(of: photoHashes) { _, _ in scheduleAutoSave() }
+        // 相册。**用系统选择器，不自己写一个相册浏览界面** ——
+        // 系统选择器只把用户勾中的那几张交给 App，不需要「访问整个相册」的权限。
+        // 「她的照片只存在这台手机上，不会上传」这句话能被相信，前提就是这里。
+        .photosPicker(isPresented: $pickingPhotos,
+                      selection: $picked,
+                      maxSelectionCount: max(1, Photo.maxPerRecord - photoHashes.count),
+                      matching: .images)
+        .onChange(of: picked) { _, items in ingest(items) }
+    }
+
+    // MARK: 配图
+
+    /// 把相册里选中的图**落盘成文件**，换回 hash 存进记录。
+    ///
+    /// 在这段之前，「＋」是往数组里塞一个 `"hash:new0"` 这样的假值：
+    /// 界面上看得到格子，磁盘上什么都没有，导出时也带不走一张。
+    /// 「配图」那条产品线当时是演出来的。
+    ///
+    /// 三件事按这个顺序做，缺一件都不成立：
+    ///   ① 选中的原图 → 压缩副本（长边 2048 / JPEG 0.82，PhotoStore 里做）
+    ///   ② 压缩后的字节算 SHA-256 → 当文件名（内容寻址）
+    ///   ③ 只把 hash 存进数组
+    @MainActor
+    private func ingest(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        Task {
+            for item in items {
+                guard photoHashes.count < Photo.maxPerRecord else { break }
+                // 一张图读不出来就跳过。**不该因为她选的某一张有问题，
+                // 连她已经写好的那句话一起存不上。**
+                guard let data = try? await item.loadTransferable(type: Data.self),
+                      let raw = UIImage(data: data),
+                      let hash = await PhotoStore.saveAsync(raw)
+                else { continue }
+                // 内容寻址：同一张照片再选一次，不会变成两格。
+                if !photoHashes.contains(hash) { photoHashes.append(hash) }
+            }
+            picked = []
+        }
     }
 
     // MARK: 读写

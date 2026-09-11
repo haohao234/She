@@ -267,6 +267,12 @@ struct RecordDetailView: View {
 
     private var record: Record? { records.first }
 
+    /// 配图，按 order 排 —— 那个顺序是用户在编辑器里一张张拖出来的，
+    /// 不是随机的。详情页如果按数据库返回顺序画，编辑时的拖动就白做了。
+    private var photoHashes: [String] {
+        (record?.photos ?? []).sorted { $0.order < $1.order }.map(\.hash)
+    }
+
     private var history: [Revision] {
         revisions.filter { $0.recordID == recordID }.sorted { $0.version > $1.version }
     }
@@ -304,6 +310,13 @@ struct RecordDetailView: View {
                             Text(r.title)
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(C.ink)
+
+                            // 与 34 屏同一条判断：**图片紧跟标题，不塞在正文下面**。
+                            // 一条「她说想要这个」配上照片，半年后还认得出是哪一款；
+                            // 纯文字不能。详情页是只读的，所以不给删除角标、也不给添加格。
+                            if !photoHashes.isEmpty {
+                                PhotoGrid(hashes: .constant(photoHashes), editable: false)
+                            }
 
                             Text(r.body)
                                 .font(Typo.bodyS)

@@ -63,6 +63,22 @@ struct HerInfoApp: App {
         let all = (try? ctx.fetch(FetchDescriptor<Record>())) ?? []
         ReminderService.shared.rescheduleAll(all)
 
+        // 清掉没有任何地方引用的图片文件。
+        //
+        // **只在启动时做一次**，理由见 PhotoStore.purgeOrphans：
+        // 「一张图什么时候可以删」要在四个地方分别判断对（移除配图 / 清空回收站 /
+        // 删记录 / 恢复历史版本），太容易漏一个；按「现有引用全集」扫一遍不会误删。
+        //
+        // 三处引用都要算上，**少算一处就会把还在用的图删掉**：
+        //   ① 记录自己的配图 ② 历史版本里存的图快照 ③ 头像
+        // 这里用的 `all` 是**不过滤删除状态的** —— 回收站里的记录还能恢复，
+        // 它的配图当然还得留着。
+        let revisions = (try? ctx.fetch(FetchDescriptor<Revision>())) ?? []
+        let avatar = (try? ctx.fetch(FetchDescriptor<Profile>()))?.first?.avatarHash
+        PhotoStore.purgeOrphans(keeping: PhotoStore.referencedHashes(records: all,
+                                                                     revisions: revisions,
+                                                                     avatar: avatar))
+
         drainInbox()
     }
 

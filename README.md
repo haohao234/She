@@ -120,6 +120,7 @@ open HerInfo.xcodeproj
 | `Features/ProfileEditView.swift` | 完成 | **33** 编辑她的档案 |
 | `Features/ExportView.swift` | 完成 | **35** 导出档案 |
 | `Features/SecondaryViews.swift` | 结构到位 | 17 / 12 / 27 完整；23 / 13 完整 |
+| `Services/PhotoStore.swift` | 完成 | 配图落盘层：内容寻址（SHA-256 前 8 字节）+ JPEG 压缩副本 + 降采样读 + 孤儿清理 |
 | `Services/ReminderService.swift` | 完成 | 通知 + 地理围栏，含 20 个区域上限处理 |
 | `Services/ExportService.swift` | 完成 | 三种格式都是真实现，不是占位 |
 | `HerInfoNotification/NotificationViewController.swift` | 完成 | **36** 展开态入口：取通知、读附件、转发点击 |
@@ -130,8 +131,14 @@ open HerInfo.xcodeproj
 以及 36 屏整套通知内容扩展（独立 target + 共享契约），
 加上设置链 12→35 / 12→27 / 12→13→23。**
 
-一共 17 个 Swift 源文件（主 App 13 + 扩展 3 + 两者共用的契约 1），
+一共 18 个 Swift 源文件（主 App 14 + 扩展 3 + 两者共用的契约 1），
 外加 2 份 `Info.plist`、1 份 `project.yml`、1 条 CI 流水线。
+
+> **「配图」这条线在补 `PhotoStore` 之前是演出来的**：`PhotoGrid` 的「＋」往数组里塞的是
+> `"hash:new0"` 这种假字符串，`PhotoCell` 画的是分类渐变，33 屏「换一张头像」的按钮体是空的，
+> 而 `ExportService` 的注释写着「图片单独放在文件夹里」却从没拷过一张图。
+> 现在整条链是真的：相册（系统选择器，不要整库权限）→ 压缩副本（长边 2048 / JPEG 0.82）
+> → 内容哈希当文件名 → 只在数据模型里存 hash。导 JSON 时配图会拷到并排的「…配图」文件夹里。
 
 ## 三、还需要铺开的
 

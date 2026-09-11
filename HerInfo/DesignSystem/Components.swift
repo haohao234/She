@@ -12,6 +12,10 @@
 //
 
 import SwiftUI
+// PhotoCell / AvatarView 要拿 UIImage 来显示真实图片（PhotoStore 读出来的）。
+import UIKit
+// PhotoGrid 的拖动排序用 .onDrop(of: [.text], …)，UTType 在这里。
+import UniformTypeIdentifiers
 
 // MARK: - 卡片
 
@@ -413,18 +417,35 @@ struct RecordCard: View {
 
 /// 105 × 105 · 圆角 14 · 横向间距 10。
 /// **一行正好 3 个**：105×3 + 10×2 = 335 = 375 − 40（左右各 20）。这是算出来的，不是凑的。
+///
+/// 这个组件只负责「画格子 + 排顺序」，**不负责去相册取图**：
+/// 系统相册选择器属于功能层，长在设计系统里会让它绑死 PhotosUI。
+/// 上层（RecordEditorView）把选择结果落成 hash 再传进来。
 struct PhotoGrid: View {
     @Binding var hashes: [String]
     var maxCount: Int = Photo.maxPerRecord
+
+    /// 「＋」被点。上层在这里打开 PhotosPicker。
+    var onAdd: () -> Void = {}
+
+    /// 能不能删、能不能拖排序。详情页只看，编辑器才能改。
+    var editable: Bool = true
+
+    @State private var dragging: String?
 
     private let cell: CGFloat = 105
     private let gap: CGFloat = 10
 
     /// 显式 init 的理由见 `SegmentControl`（private let 会让
     /// 逐成员初始化器降级成 private）。
-    init(hashes: Binding<[String]>, maxCount: Int = Photo.maxPerRecord) {
+    init(hashes: Binding<[String]>,
+         maxCount: Int = Photo.maxPerRecord,
+         editable: Bool = true,
+         onAdd: @escaping () -> Void = {}) {
         self._hashes = hashes
         self.maxCount = maxCount
+        self.editable = editable
+        self.onAdd = onAdd
     }
 
     private var columns: [GridItem] {
@@ -433,15 +454,25 @@ struct PhotoGrid: View {
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: gap) {
-            ForEach(Array(hashes.enumerated()), id: \.offset) { idx, hash in
-                PhotoCell(hash: hash, index: idx)
-                    .onTapGesture { /* 点击看大图 */ }
+            // 内容寻址的 hash 天然唯一，所以 id 可以直接用自己。
+            ForEach(hashes, id: \.self) { hash in
+                PhotoCell(hash: hash, size: cell,
+                          onRemove: editable ? { remove(hash) } : nil)
+                    // 拖动排序 —— 把界面上那句「长按可以拖动排序」变成真的。
+                    // 用 onDrag/onDrop 而不是 .draggable：后者在 LazyVGrid 里
+                    // 拿不到「插到第几个」的位置信息，只能知道「放到了网格里」。
+                    .onDrag {
+                        guard editable else { return NSItemProvider() }
+                        dragging = hash
+                        return NSItemProvider(object: hash as NSString)
+                    }
+                    .onDrop(of: [.text], delegate: PhotoDropDelegate(item: hash,
+                                                                     hashes: $hashes,
+                                                                     dragging: $dragging))
             }
 
-            if hashes.count < maxCount {
-                Button {
-                    hashes.append("hash:new\(hashes.count)")
-                } label: {
+            if editable && hashes.count < maxCount {
+                Button(action: onAdd) {
                     Image(systemName: "plus")
                         .font(.system(size: 18, weight: .regular))
                         .foregroundStyle(C.primary)
@@ -458,24 +489,148 @@ struct PhotoGrid: View {
         // 到 9 张后添加格消失，而不是置灰 —— 不留「还能再加」的错觉。
         .animation(.easeOut(duration: 0.2), value: hashes.count)
     }
+
+    /// 从数组里移除。**不在这里删文件** ——
+    /// 这条记录的历史版本可能还引用着它，删早了旧版的图就白了。
+    /// 文件交给 `PhotoStore.purgeOrphans` 在启动时按引用全集清。
+    private func remove(_ hash: String) {
+        hashes.removeAll { $0 == hash }
+    }
 }
 
+/// 拖动排序的落点逻辑。
+///
+/// 真正干活的只有 `dropEntered` 里那三行：把被拖的那个从原位置摘出来、
+/// 插到当前经过的位置。其余是必须实现但无事可做的协议方法。
+private struct PhotoDropDelegate: DropDelegate {
+    let item: String
+    @Binding var hashes: [String]
+    @Binding var dragging: String?
+
+    func dropEntered(info: DropInfo) {
+        guard let from = dragging,
+              from != item,
+              let i = hashes.firstIndex(of: from),
+              let j = hashes.firstIndex(of: item)
+        else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+            hashes.move(fromOffsets: IndexSet(integer: i), toOffset: j > i ? j + 1 : j)
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragging = nil
+        return true
+    }
+
+    func validateDrop(info: DropInfo) -> Bool { dragging != nil }
+}
+
+/// 一张配图。
+///
+/// **读不到图时回落到渐变，而不是留一个空白洞** —— 用户看到的应该永远是
+/// 「这里有一张图」，而不是「这里坏了」。文件缺失只可能是还没落盘或已被清理，
+/// 两种情况都不该在界面上表现成破损。
 struct PhotoCell: View {
     let hash: String
-    let index: Int
+    var size: CGFloat = 105
+    /// 非 nil 时右上角出现删除角标（只有编辑器会传）。
+    var onRemove: (() -> Void)?
+
+    @State private var image: UIImage?
+
+    /// 显式 init 的理由见 `SegmentControl` ——
+    /// 只要有一个 `private` 存储属性，逐成员初始化器就会**降级成 private**。
+    /// 这个组件眼下只在同一文件里被构造，但下一个用它的人不会知道这件事。
+    init(hash: String, size: CGFloat = 105, onRemove: (() -> Void)? = nil) {
+        self.hash = hash
+        self.size = size
+        self.onRemove = onRemove
+    }
 
     var body: some View {
-        // 真机上这里用 Image(uiImage:) 读沙盒 Photos/<hash>.jpg。
-        // 骨架阶段用分类渐变占位，尺寸与圆角与实际一致。
-        RoundedRectangle(cornerRadius: R.photo, style: .continuous)
-            .fill(LinearGradient(
-                colors: [C.primarySoft, C.primaryDeep],
-                startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: 105, height: 105)
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                } else {
+                    LinearGradient(colors: [C.primarySoft, C.primaryDeep],
+                                   startPoint: .topLeading,
+                                   endPoint: .bottomTrailing)
+                }
+            }
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: R.photo, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: R.photo, style: .continuous)
                     .strokeBorder(C.line, lineWidth: 1)
             )
+
+            if let onRemove {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Color.black.opacity(0.45), in: Circle())
+                }
+                .padding(5)
+            }
+        }
+        // 加载放在 .task 里：磁盘 IO 与解码都不该压在主线程。
+        // maxPixel 给 3 倍是为了 Retina 下不糊，同时远小于原图。
+        .task(id: hash) {
+            image = await PhotoStore.load(hash, maxPixel: size * 3)
+        }
+    }
+}
+
+// MARK: - 头像
+
+/// 圆头像。没设过的时候**不显示灰色剪影，而显示名字的第一个字** ——
+/// 剪影是「查无此人」的语义，名字首字是「就是她」。
+/// 一个还没填完的档案，最不该看起来像出错了。
+struct AvatarView: View {
+    var hash: String?
+    var name: String
+    var size: CGFloat = 72
+
+    @State private var image: UIImage?
+
+    init(hash: String?, name: String, size: CGFloat = 72) {
+        self.hash = hash
+        self.name = name
+        self.size = size
+    }
+
+    var body: some View {
+        Group {
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                LinearGradient(colors: [C.primarySoft, C.primaryDeep],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                    .overlay(
+                        Text(String(name.prefix(1)))
+                            .font(.system(size: size * 0.36, weight: .semibold))
+                            .foregroundStyle(.white)
+                    )
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .task(id: hash) {
+            guard let hash, !hash.isEmpty else { image = nil; return }
+            image = await PhotoStore.load(hash, maxPixel: size * 3)
+        }
     }
 }
 

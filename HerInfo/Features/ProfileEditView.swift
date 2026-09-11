@@ -10,6 +10,8 @@
 
 import SwiftUI
 import SwiftData
+import UIKit
+import PhotosUI
 
 struct ProfileEditView: View {
     @Binding var path: [Route]
@@ -24,6 +26,13 @@ struct ProfileEditView: View {
     @State private var about = ""
     @State private var loaded = false
     @State private var saved = false
+
+    /// 头像走的是和配图完全相同的管线（压副本 → 内容哈希 → 只记 hash）。
+    /// **不另存一份原图** —— 否则同一张照片会在沙盒里躺两份，而用户只会
+    /// 在「占用空间」那个数字变大的时候觉得奇怪。
+    @State private var avatarHash: String?
+    @State private var pickedAvatar: PhotosPickerItem?
+    @State private var pickingAvatar = false
 
     private var profile: Profile? { profiles.first }
 
@@ -40,25 +49,17 @@ struct ProfileEditView: View {
                     // 没设过头像时不显示灰色剪影，而显示她名字的第一个字。
                     SCard(padding: S.cardPadL) {
                         HStack(spacing: 16) {
-                            Circle()
-                                .fill(LinearGradient(colors: [C.primarySoft, C.primaryDeep],
-                                                     startPoint: .topLeading,
-                                                     endPoint: .bottomTrailing))
-                                .frame(width: 72, height: 72)
-                                .overlay(
-                                    Text(String(name.prefix(1)))
-                                        .font(.system(size: 26, weight: .semibold))
-                                        .foregroundStyle(.white)
-                                )
+                            AvatarView(hash: avatarHash, name: name, size: 72)
 
                             VStack(alignment: .leading, spacing: 6) {
                                 Button {
-                                    // 真机上：PhotosPicker → 存沙盒 → 记 hash
+                                    pickingAvatar = true
                                 } label: {
                                     Text("换一张头像")
                                         .font(Typo.pillSel)
                                         .foregroundStyle(C.primary)
                                 }
+                                .pressDown()
                                 Text("她的照片只存在这台手机上，不会上传")
                                     .font(Typo.caption)
                                     .foregroundStyle(C.ink3)
@@ -125,6 +126,23 @@ struct ProfileEditView: View {
         .background(C.bg)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear(perform: load)
+        .photosPicker(isPresented: $pickingAvatar, selection: $pickedAvatar, matching: .images)
+        .onChange(of: pickedAvatar) { _, item in ingestAvatar(item) }
+    }
+
+    /// 换头像。跟 34 屏的配图走同一条管线 ——
+    /// 唯一区别是这里只留一张，所以不用数组。
+    @MainActor
+    private func ingestAvatar(_ item: PhotosPickerItem?) {
+        guard let item else { return }
+        Task {
+            if let data = try? await item.loadTransferable(type: Data.self),
+               let raw = UIImage(data: data),
+               let hash = await PhotoStore.saveAsync(raw) {
+                avatarHash = hash
+            }
+            pickedAvatar = nil
+        }
     }
 
     private var divider: some View {
@@ -179,6 +197,7 @@ struct ProfileEditView: View {
         together = p.together
         city = p.city
         about = p.about
+        avatarHash = p.avatarHash
         if let b = p.birthday { birthday = b }
     }
 
@@ -188,6 +207,7 @@ struct ProfileEditView: View {
         p.together = together
         p.city = city
         p.about = about
+        p.avatarHash = avatarHash
         p.birthday = birthday
 
         // 档案的历史版本（33 屏提示卡承诺的那个机制）。

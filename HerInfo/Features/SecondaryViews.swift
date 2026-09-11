@@ -41,16 +41,7 @@ struct ProfileDetailView: View {
 
                         SCard(padding: S.cardPadL) {
                             HStack(spacing: 14) {
-                                Circle()
-                                    .fill(LinearGradient(colors: [C.primarySoft, C.primaryDeep],
-                                                         startPoint: .topLeading,
-                                                         endPoint: .bottomTrailing))
-                                    .frame(width: 56, height: 56)
-                                    .overlay(
-                                        Text(String(p.name.prefix(1)))
-                                            .font(.system(size: 22, weight: .semibold))
-                                            .foregroundStyle(.white)
-                                    )
+                                AvatarView(hash: p.avatarHash, name: p.name, size: 56)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(p.name)
                                         .font(.system(size: 17, weight: .semibold))
