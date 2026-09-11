@@ -441,29 +441,44 @@ struct RecordDetailView: View {
                                 .strokeBorder(C.line, lineWidth: 1)
                         )
 
+                        // 07 屏的入口。**整块可点，不给每行配箭头** ——
+                        // 点哪一行都是去同一页（到那页再挑跟哪一版比），
+                        // 三行各挂一个箭头只会让人以为它们去三个地方。
                         if !history.isEmpty {
-                            SCard {
-                                HStack {
-                                    Text("历史版本")
-                                        .font(Typo.captionM)
-                                        .foregroundStyle(C.ink3)
-                                    Spacer()
-                                    Text("\(history.count) 个")
-                                        .font(Typo.numCaption)
-                                        .foregroundStyle(C.ink3)
-                                }
-                                ForEach(history.prefix(3)) { v in
+                            Button { path.append(.versionHistory(id: recordID)) } label: {
+                                SCard {
                                     HStack {
-                                        Text("第 \(v.version) 版")
-                                            .font(Typo.bodyS)
-                                            .foregroundStyle(C.ink)
+                                        Text("历史版本")
+                                            .font(Typo.captionM)
+                                            .foregroundStyle(C.ink3)
                                         Spacer()
-                                        Text(v.at.relativeCN)
+                                        Text("\(history.count) 个")
                                             .font(Typo.numCaption)
+                                            .foregroundStyle(C.ink3)
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundStyle(C.ink3.opacity(0.6))
+                                    }
+                                    ForEach(history.prefix(3)) { v in
+                                        HStack {
+                                            Text("第 \(v.version) 版")
+                                                .font(Typo.bodyS)
+                                                .foregroundStyle(C.ink)
+                                            Spacer()
+                                            Text(v.at.relativeCN)
+                                                .font(Typo.numCaption)
+                                                .foregroundStyle(C.ink3)
+                                        }
+                                    }
+                                    if history.count > 3 {
+                                        Text("左右对比全部 \(history.count) 个版本")
+                                            .font(Typo.caption)
                                             .foregroundStyle(C.ink3)
                                     }
                                 }
                             }
+                            .buttonStyle(.plain)
+                            .pressDown()
                         }
 
                         // 删除。**刻意放在最后、且用危险色** ——

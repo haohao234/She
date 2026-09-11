@@ -1229,16 +1229,17 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
 
   <div class="grid g2">
     <div class="card pad">
-      <h4>照搬就能完成的（12 屏）</h4>
+      <h4>照搬就能完成的（还剩 3 屏）</h4>
       <ul class="tight">
-        <li><b>06 / 28 / 29</b> 三个空态 —— 用 <span class="mono-s">EmptyState</span>，只换图标与文案</li>
-        <li><b>08</b> 键盘态 —— 加 <span class="mono-s">safeAreaInset</span> 即可，不用新 View</li>
-        <li><b>21 / 22</b> 引导与轻提示 —— <span class="mono-s">sheet</span> / <span class="mono-s">overlay</span> 两种挂法</li>
-        <li><b>25 / 27</b> 排序置顶与回收站 —— 已在 <span class="mono-s">SecondaryViews.swift</span> 里写好（完整实现）</li>
-        <li><b>26</b> 删除确认 —— <span class="mono-s">presentationDetents([.height(...)])</span></li>
-        <li><b>07</b> 历史版本对比 —— 两栏 <span class="mono-s">Revision</span> 快照，数据已就绪</li>
-        <li><b>30</b> 筛选面板 —— 一次性草稿状态，不落库</li>
-        <li><b>15 / 16</b> 首次使用 —— 两个静态表单 + 一次权限请求</li>
+        <li><b>30</b> 筛选面板 —— 一次性草稿状态，不落库；照 <span class="mono-s">SecondaryViews.swift</span> 里 27 的写法搬</li>
+        <li><b>08</b> 键盘态 —— 已由「搜索独立成屏」的设计<b>规避</b>（<span class="mono-s">HomeView.swift:208</span>），
+            输入框聚焦态在 <span class="mono-s">HITextField</span> 里；<b>没有独立屏，也不需要有</b></li>
+        <li>其余 <b>06 / 24 / 28 / 29</b> 也早已落地：06 空态在 <span class="mono-s">BrowseView</span>（标题按分类换、
+            起手卡只在全新时给）、24 在 <span class="mono-s">SecondaryViews</span>、
+            28 / 29 各是一处 <span class="mono-s">EmptyState</span> —— 待办清单曾比实际落后一步</li>
+        <li><b>07</b> 历史版本对比 —— 已实现（<span class="mono-s">VersionHistoryView.swift</span>）：
+            差异按<b>行</b>用计数池算（不取最长公共子序列），「恢复」是<b>把旧快照落成一个新版本</b>、不是回滚，
+            所以恢复前的内容仍在历史里、恢复本身也可逆</li>
       </ul>
     </div>
     <div class="card pad">

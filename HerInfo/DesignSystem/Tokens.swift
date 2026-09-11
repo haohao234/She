@@ -93,6 +93,23 @@ enum C {
     /// 如果它和「保存」同一个颜色，用户会靠颜色区分不了两件事。
     static let danger = Color.dual(0xB0523C, 0xD98672)
 
+    // 版本对比（07 屏）用的两组色。**刻意不进公开的 16 个令牌** ——
+    // 它们只出现在「旧版原文 / 新版新增」这两个 diff 块上，
+    // 加进公开令牌就等于逼规范页与交互原型各长两档，只为这两块存在。
+    //
+    // 旧版那组是「退到背景里」：底比页面底还浅一档，字比 ink3 再淡一档。
+    // diff 的两侧必须**一退一进** —— 两边都加重就分不出哪边是新的了。
+    static let diffOldBg  = Color.dual(0xF5F2ED, 0x2E2823)
+    static let diffOldInk = Color.dual(0xA79E95, 0x8A8279)
+
+    /// 高亮底 / 高亮文字。设计规范里本来就有这两档值（`#F7E0D6` / `#B0523C`），
+    /// 只是此前没有任何组件用到，所以一直没落成令牌。
+    /// 深色档按「高亮降饱和」推：`#F7E0D6` → `#4A2F25`；
+    /// 而高亮文字的深色档**就是主色的深色档**，所以直接取契约值，
+    /// 不把 `0xD37C63` 再抄一遍（抄一遍就是一处将来会漂移的副本）。
+    static let hiBg  = Color.dual(0xF7E0D6, 0x4A2F25)
+    static let hiInk = Color.dual(0xB0523C, HINotify.Primary.dark)
+
     /// 开关轨道（关）。它不在公开的 16 个令牌里，因为只有开关一个组件用它。
     static let switchTrack = Color.dual(0xE3DCD3, 0x2E2823)
 }

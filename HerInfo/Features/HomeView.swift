@@ -23,6 +23,7 @@ enum Route: Hashable {
     case reminderNew(recordID: String?)  // 32 新建提醒（新）
     case search                       // 04 搜索 · 全局查找
     case recordDetail(id: String)     // 31 记录详情
+    case versionHistory(id: String)   // 07 历史版本 · 左右对比（新）
     case recordEdit(id: String)       // 34 记录配图（新）
     case starterEdit(topic: String)   // 21 首条记录引导 · 预填好的编辑器（新）
     case trash                        // 27 回收站
@@ -102,6 +103,8 @@ struct RootView: View {
                     SearchView(path: $path)
                 case .recordDetail(let id):
                     RecordDetailView(path: $path, recordID: id)
+                case .versionHistory(let id):
+                    VersionHistoryView(path: $path, recordID: id)
                 case .recordEdit(let id):
                     RecordEditorView(path: $path, editingID: id, starterID: "")
                 case .starterEdit(let topic):
