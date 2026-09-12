@@ -121,7 +121,7 @@ enum CycleReminder {
             sortBy: [SortDescriptor(\.startedAt, order: .reverse)]
         )
         let periods = (try? context.fetch(desc)) ?? []
-        let stats = CycleStats(periods: periods)
+        let stats = CycleStats(models: periods)
 
         guard let next = stats.nextStart else { return }
 

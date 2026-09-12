@@ -42,7 +42,7 @@ struct CycleView: View {
     /// 40 屏。
     @State private var showNotify = false
 
-    private var stats: CycleStats { CycleStats(periods: periods) }
+    private var stats: CycleStats { CycleStats(models: periods) }
 
     var body: some View {
         ScrollView {
@@ -148,6 +148,17 @@ struct CycleView: View {
         }
         .padding(.vertical, 16)
         .background(C.card, in: RoundedRectangle(cornerRadius: R.card, style: .continuous))
+    }
+
+    /// 三栏里「上次开始」那一格的字。
+    ///
+    /// **写「9月10日」而不是「3 天前」** —— 这一栏是三格并排的数字，
+    /// 混进一个相对时间会让另外两格（28 天 / 5 天）也跟着读成「多久」，
+    /// 而它们其实是「多长」。三格统一成绝对日期与天数，才是一类东西。
+    /// 没有记录时给一个「—」，**不留空**（空格子看起来像加载失败）。
+    private func shortDay(_ date: Date?) -> String {
+        guard let date else { return "—" }
+        return DateFormatter.cycleFull.string(from: date)
     }
 
     private var divider: some View {
@@ -292,7 +303,9 @@ struct CycleRing: View {
 
 struct CycleRow: View {
 
-    let period: CyclePeriod
+    /// 取 `CycleStats.Entry` 而不是 `CyclePeriod` —— 37 屏那个「最近几次」
+    /// 列表里可能有一条**还没保存的**（38 屏预览），它本来就不是数据库里的行。
+    let period: CycleStats.Entry
     let stats: CycleStats
     /// 39 屏右侧显示「距上次 N 天」，37 屏的最近列表不显示。
     var showGap: Bool = false
@@ -402,11 +415,18 @@ struct CycleRecordSheet: View {
 
     /// 这次记录之后会变成的那一串（用来预览提醒文案）。
     /// 把「还没保存的这一次」先算进去，否则预览说的是保存前的旧规律。
+    ///
+    /// **不造 `CyclePeriod` 对象**：这是个计算属性，每次重算都跑一遍，
+    /// 而 `@Model` 的对象是持久化对象 —— 随手 new 一个又不插入数据库，
+    /// 是件轻则浪费、重则报错的事。`CycleStats` 只吃值，正合此处。
     private var previewStats: CycleStats {
-        var list = periods
-        if let e = existing { list.removeAll { $0.id == e.id } }
-        list.append(CyclePeriod(id: "preview", startedAt: startedAt, durationDays: duration))
-        return CycleStats(periods: list)
+        let base = CycleStats(models: periods)
+        if let e = existing {
+            // 改一条：先把原来那条摘掉，再按界面上的当前值加回去
+            return base.replacing(id: e.id, startedAt: startedAt, durationDays: duration)
+        }
+        // 新记一条：往预览里追加一条虚拟的
+        return base.adding(id: "preview", startedAt: startedAt, durationDays: duration)
     }
 
     var body: some View {
@@ -641,7 +661,7 @@ struct CycleStatsView: View {
     @Query(sort: \CyclePeriod.startedAt, order: .reverse) private var periods: [CyclePeriod]
     @Environment(\.dismiss) private var dismiss
 
-    private var stats: CycleStats { CycleStats(periods: periods) }
+    private var stats: CycleStats { CycleStats(models: periods) }
 
     var body: some View {
         ScrollView {

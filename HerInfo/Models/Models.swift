@@ -398,7 +398,23 @@ final class CyclePeriod {
 /// **一个都不落库。** 这样「改了一次开始日」之后，首页 / 趋势 / 提醒三处
 /// 不可能各自显示不同的数字 —— 它们读的是同一个入参。
 /// 理由与 31 屏的「不存快照」同源：多存一份就是第二份真相。
+///
+/// **内部存的是值、不是 `CyclePeriod` 对象**（`Entry`）。有两个原因：
+///  ① 38 屏要预览「还没保存的这一次」，而那是**不该被插进数据库**的一条。
+///     早先的写法是造一个 `CyclePeriod(id:"preview", …)` 塞进数组 ——
+///     但 `@Model` 的对象是持久化对象，随手 new 一个又不用，
+///     轻则每次重算都造一个（`previewStats` 是计算属性，每帧都跑），
+///     重则被 SwiftData 判成「已创建未插入」而报错。
+///  ② 统计本身只需要 `开始日 + 天数 + id` 三样东西，
+///     拿着整个持久化对象是**用不着的耦合**。
 struct CycleStats {
+
+    /// 参与统计的一次经期 —— 只是三个值，不是数据库里的那一行。
+    struct Entry {
+        let id: String
+        let startedAt: Date
+        let durationDays: Int
+    }
 
     /// 推算用的周期长度。**28 天是社会常识值、不是医学判断** ——
     /// 40 屏页脚那句「不是医学判断」说的就是这件事。
@@ -409,14 +425,49 @@ struct CycleStats {
     static let durationRange = 3...7
 
     /// 已按开始日从新到旧排好。
-    let periods: [CyclePeriod]
+    let periods: [Entry]
 
-    init(periods: [CyclePeriod]) {
+    init(periods: [Entry]) {
         self.periods = periods.sorted { $0.startedAt > $1.startedAt }
     }
 
+    /// 从落库的那些记录建一份。
+    init(models: [CyclePeriod]) {
+        self.init(periods: models.map {
+            Entry(id: $0.id, startedAt: $0.startedAt, durationDays: $0.durationDays)
+        })
+    }
+
+    /// 38 屏用：在落库记录之外，再追加一条「还没保存的这次」。
+    /// **不造 `CyclePeriod` 对象**，所以不会碰到 SwiftData 的那条线。
+    func adding(id: String, startedAt: Date, durationDays: Int) -> CycleStats {
+        CycleStats(periods: periods + [Entry(id: id,
+                                             startedAt: startedAt,
+                                             durationDays: durationDays)])
+    }
+
+    /// 38 屏改一条时用：先把原记录摘掉，再加进新的值。
+    func replacing(id: String, startedAt: Date, durationDays: Int) -> CycleStats {
+        adding(id: id, startedAt: startedAt, durationDays: durationDays)
+            .removing(id: id, keepNewest: true)
+    }
+
+    /// 去掉某个 id（`keepNewest` = 同 id 只去掉最早出现的那一条）。
+    private func removing(id: String, keepNewest: Bool) -> CycleStats {
+        var seen = false
+        var out: [Entry] = []
+        for e in periods {
+            if e.id == id && !(keepNewest && seen) {
+                seen = true
+                continue
+            }
+            out.append(e)
+        }
+        return CycleStats(periods: out)
+    }
+
     var isEmpty: Bool { periods.isEmpty }
-    var latest: CyclePeriod? { periods.first }
+    var latest: Entry? { periods.first }
 
     /// 平均周期天数。**不足两次时退回 28** —— 一次记录算不出周期，这是数学事实。
     var averageCycle: Int {
@@ -451,7 +502,7 @@ struct CycleStats {
     }
 
     /// 今天是不是落在某一次经期里。
-    func currentPeriod(on today: Date = .now) -> CyclePeriod? {
+    func currentPeriod(on today: Date = .now) -> Entry? {
         periods.first { p in
             let d = days(from: p.startedAt, to: today)
             return d >= 0 && d < p.durationDays
@@ -479,7 +530,7 @@ struct CycleStats {
     }
 
     /// 39 屏那 6 根柱子。
-    var recentSix: [CyclePeriod] { Array(periods.prefix(6)) }
+    var recentSix: [Entry] { Array(periods.prefix(6)) }
 
     /// 「很规律」的判据。**给说法不给分数** —— 界面上只有「很规律 / 有点波动」
     /// 两种说法，没有百分制。做一个精确到小数点的「规律指数」，
