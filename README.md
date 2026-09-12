@@ -1,4 +1,4 @@
-# 她的信息本 · iOS 起步骨架
+# 我的宝宝江林桐 · iOS 起步骨架
 
 这份代码是**设计稿到 iOS 之间的桥**，不是成品 App。
 
@@ -183,8 +183,10 @@ open HerInfo.xcodeproj
 | `Features/MoodView.swift` | 完成 | **09** 情绪打标（三档 + 最近一次 + 四行系统级入口）/ **10** 打标后的即时建议面板 |
 | `Features/MoodIntent.swift` | 完成 | **09** 的快捷指令入口（`AppIntent` 就写在主 App 里，不用新 target） |
 | `Features/SecondaryViews.swift` | 完成 | 17 / 12 / 23 / 13；**27 回收站**（还剩 N 天、恢复说明、全部恢复） |
+| `Features/CycleView.swift` | 完成 | **37** 生理期首页（环形）/ **38** 记录一次 / **39** 周期统计 / **40** 提醒设置 / **41** 空态 |
 | `Services/PhotoStore.swift` | 完成 | 配图落盘层：内容寻址（SHA-256 前 8 字节）+ JPEG 压缩副本 + 降采样读 + 孤儿清理 |
 | `Services/ReminderService.swift` | 完成 | 通知 + 地理围栏，含 20 个区域上限处理 |
+| `Services/CycleService.swift` | 完成 | 生理期写入口（同日判重）+ 提醒唯一出口（先全撤再重排，一次性通知） |
 | `Services/ExportService.swift` | 完成 | 三种格式都是真实现，不是占位 |
 | `HerInfoNotification/NotificationViewController.swift` | 完成 | **36** 展开态入口：取通知、读附件、转发点击 |
 | `HerInfoNotification/NotificationContentView.swift` | 完成 | **36** 展开态那三块：配图 / 元信息 / 五个胶囊 |
@@ -193,13 +195,14 @@ open HerInfo.xcodeproj
 | `HerInfoShare/ShareComposeView.swift` | 完成 | 分享面板：原文预览 + 四个分类胶囊 + 「存下这条」（按钮文案随状态变） |
 
 **覆盖了主流程 01→02→03→04→05、首次使用 15→16、首条记录引导 06→21、历史版本 31→07、
-搜索与筛选 04→30、情绪打标 09→10、分享一段文字 → 一条记录，
+搜索与筛选 04→30、情绪打标 09→10、分享一段文字 → 一条记录、
+生理期 37→38→39 / 37→40、生理期提醒 → 系统通知，
 以及 22 轻提示 / 26 删除二次确认 / 27 回收站这三屏的交互壳，
 36 屏整套通知内容扩展（独立 target + 共享契约），
 09 屏那四行系统级入口**全部**（锁屏 / 快捷指令 / 长按图标 / 分享扩展），
 加上设置链 12→35 / 12→27 / 12→13→23。**
 
-一共 **27 个 Swift 源文件**（主 App 22 + 通知扩展 3 + 分享扩展 2），
+一共 **29 个 Swift 源文件**（主 App 24 + 通知扩展 3 + 分享扩展 2），
 外加 3 份 `Info.plist`、1 份 `project.yml`、1 条 CI 流水线。
 两份契约文件被多个 target 同时编译 —— 那就是「跨进程共享」在工程层面的全部含义。
 
@@ -409,8 +412,8 @@ open HerInfo.xcodeproj
 
 ### 2. 图标：手绘 SVG → SF Symbols
 
-底部 4 个 tab 图标在设计稿里是手绘 SVG，代码里换成
-`house` / `square.grid.2x2` / `magnifyingglass` / `bell`。
+底部 5 个 tab 图标在设计稿里是手绘 SVG，代码里换成
+`house` / `square.grid.2x2` / `arrow.triangle.2.circlepath` / `magnifyingglass` / `bell`。
 理由：自动跟随字号与字重、矢量不用切图、且是系统自身的语言。
 其余手绘图标同理优先找 SF Symbols 对应项，找不到的再导出 SVG 当资产。
 
@@ -433,10 +436,10 @@ Xcode 只跑在 macOS 上，交叉编译到 iOS 也不合法。
 | 脚本 | 管什么 |
 |---|---|
 | `check-swift.js` | 括号配平、类型引用闭合、Route 与导航对齐、关键常量落地（17 项） |
-| `check-argorder.py` | 逐成员 `init` 的**标签顺序**必须与属性声明顺序一致（33 个类型 / 67 处调用） |
+| `check-argorder.py` | 逐成员 `init` 的**标签顺序**必须与属性声明顺序一致（49 个类型 / 83 处调用） |
 | `check-project.py` | `project.yml` 路径自洽、两份 plist 合法、**跨文件契约一致性**（分类 id / App Group） |
-| `check-guide.py` | 操作指引与推送脚本自洽：路径存在、`.bat` 是 CRLF + **GBK 字节**、标签无悬空（46 项） |
-| `check-handoff.js` | 交接文档 12 章齐全、37 屏逐条、验收清单 |
+| `check-guide.py` | 操作指引与推送脚本自洽：路径存在、`.bat` 是 CRLF + **GBK 字节**、标签无悬空（68 项） |
+| `check-handoff.js` | 交接文档 12 章齐全、41 屏逐条、验收清单 |
 | `check-prototype.js` / `check-spec.js` | 设计侧两份 HTML 交付物 |
 
 > `check-swift.js` 里的「共用色只有一个定义处」这条判据，扫的是**剥掉注释之后的代码**。

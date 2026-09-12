@@ -593,22 +593,29 @@ struct CycleRecordSheet: View {
     // MARK: 底部保存
 
     private var saveBar: some View {
-        VStack(spacing: 8) {
-            Button {
-                save()
-            } label: {
-                Text("记下来").primaryButtonStyle()
-            }
-            .pressDown()
+        VStack(spacing: 0) {
+            // 一条发丝线 + 实底，与 03 屏那个底部保存条同一做法。
+            // **不用 `.bar` 材质** —— 毛玻璃在这套暖色底上会把下面滚过去的内容
+            // 透出来一层灰，而这个按钮要的是「按下去就记下了」的确定感。
+            Rectangle().fill(C.line).frame(height: 1)
 
-            Text("记下之后，我会按规律帮你算下次大概什么时候")
-                .font(Typo.caption)
-                .foregroundStyle(C.ink3)
+            VStack(spacing: 8) {
+                Button {
+                    save()
+                } label: {
+                    Text("记下来").primaryButtonStyle()
+                }
+                .pressDown()
+
+                Text("记下之后，我会按规律帮你算下次大概什么时候")
+                    .font(Typo.caption)
+                    .foregroundStyle(C.ink3)
+            }
+            .padding(.horizontal, S.screen)
+            .padding(.top, 14)
+            .padding(.bottom, 24)
         }
-        .padding(.horizontal, S.screen)
-        .padding(.top, 10)
-        .padding(.bottom, 6)
-        .background(.bar)
+        .background(C.card)
     }
 
     private func save() {
