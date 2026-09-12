@@ -78,6 +78,13 @@ jobs:
 
       # 编译失败时上面的步骤会红，但真正要给人看的是「错误清单」，
       # 而不是 3000 行构建日志。这一段把它摘出来。
+      #
+      # **还要把错误发成 annotation（`::error::`）** —— 这是唯一能让
+      # 「不看网页也知道哪一行错了」的通道：job 原始日志与 artifact 下载
+      # 都要仓库 admin 权限（实测 `/actions/jobs/<id>/logs` 返 403、
+      # artifact zip 返 401），而 **annotations 接口是公开可读的**
+      # （`/check-runs/<jobid>/annotations`）。没有这一段，CI 红了就只剩
+      # 一句 `Process completed with exit code 65`，无从下手。
       - name: 摘出错误与警告
         if: always()
         run: |
@@ -94,6 +101,20 @@ jobs:
           echo "------------------------------------------"
           echo "error 总数：$(grep -cE ': error:' build.log || true)"
           echo "warning 总数：$(grep -cE ': warning:' build.log || true)"
+
+          # 把错误原样发成 annotation（最多 20 条）。
+          # 换行与 % 必须转义，否则这一行在 annotation 里会被截断。
+          echo ""
+          echo "=== 作为 annotation 发出（最多 20 条）==="
+          n=0
+          grep -E ": error:" build.log | sort -u > errs.txt || true
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            n=$((n + 1))
+            if [ "$n" -gt 20 ]; then break; fi
+            esc=$(printf '%s' "$line" | sed -e 's/%/%25/g' -e 's/\r//g')
+            echo "::error::$esc"
+          done < errs.txt
 
       # ── 把「0 warning」从声明变成断言 ────────────────────────
       # 这个工程对外一直写着「0 error / 0 warning」，但那是**声明** ——
