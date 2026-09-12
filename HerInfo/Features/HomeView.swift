@@ -31,6 +31,7 @@ enum Route: Hashable {
     case lock                         // 13 应用锁
     case notifyDenied                 // 24 通知权限 · 关掉之后（新）
     case mood                         // 09 情绪打标 / 10 打标之后的建议（新）
+    case cycle                        // 37 生理期首页（新）
 }
 
 // MARK: - 容器
@@ -107,6 +108,10 @@ struct RootView: View {
                     switch tab {
                     case .home:     HomeView(path: $path)
                     case .category: BrowseView(path: $path)
+                    // 生理期**不做成 push 出去的二级页**，而是一个平级 tab ——
+                    // 它是要「经常看一眼」的东西（还有几天、是不是正好在经期），
+                    // 藏在两级菜单后面，这个「看一眼」就发生了。
+                    case .cycle:    CycleView()
                     case .search:   SearchView(path: $path, onCancel: { tab = .home })
                     case .remind:   ReminderListView(path: $path)
                     }
@@ -156,6 +161,8 @@ struct RootView: View {
                     NotificationDeniedView(path: $path)
                 case .mood:
                     MoodBoardView(path: $path)
+                case .cycle:
+                    CycleView()
                 }
             }
         }
@@ -398,13 +405,14 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// 首页问候语。
+    ///
+    /// **刻意不随时段变化** —— 原来写了四段「早上好/中午好/下午好/晚上好」，
+    /// 但这句话是「我对她说」，不是「系统在报时」。四个变体换来换去，
+    /// 反而像是在播报时间。统一成一句「你好啊，江林桐」：
+    /// 她是这个 App 的主角，这句话是写给人看的，不是给状态栏看的。
     private var greeting: String {
-        switch Calendar.current.component(.hour, from: .now) {
-        case 5..<11:  return "早上好，阿哲"
-        case 11..<14: return "中午好，阿哲"
-        case 14..<18: return "下午好，阿哲"
-        default:      return "晚上好，阿哲"
-        }
+        "你好啊，江林桐"
     }
 
     /// 档案完整度。**这是 33 屏的存在理由** ——
@@ -808,7 +816,7 @@ struct AppLockCover: View {
                         .foregroundStyle(C.primary)
                 }
 
-                Text("她的信息本")
+                Text("我的宝宝江林桐")
                     .font(Typo.cardTitle)
                     .foregroundStyle(C.ink)
 
@@ -846,7 +854,9 @@ struct AppLockCover: View {
     private func unlock() async {
         guard !busy else { return }
         busy = true
-        let ok = await BiometricGate.confirm(reason: "打开她的信息本")
+        // 面容 ID 系统弹窗上那行字。写 App 名而不是「打开」——
+        // 弹窗标题已经在显示 App 名了，这里再说一遍产品名是重复。
+        let ok = await BiometricGate.confirm(reason: "打开我的宝宝江林桐")
         busy = false
         if ok {
             failed = false

@@ -16,14 +16,11 @@
 -->
 <plist version="1.0">
 <dict>
-	<!-- 显示名用中文，但 PRODUCT_NAME 保持 ASCII（HerInfo）——
-	     因为 PRODUCT_MODULE_NAME 会从 PRODUCT_NAME 推导，
-	     而 Swift 的模块名必须是 ASCII 标识符。
-	     扩展的 NSExtensionPrincipalClass 写作
-	     $(PRODUCT_MODULE_NAME).NotificationViewController，
-	     模块名一旦被改成中文，那一行就解析不出类，扩展静默不加载。 -->
+	<!-- 显示名 = 手机桌面上图标下面那行字，以及「设置」里 App 的名字。
+	     改这里就够了 —— PRODUCT_NAME 必须继续留 ASCII（HerInfo），
+	     因为 PRODUCT_MODULE_NAME 会从它推导，Swift 模块名不能是中文。 -->
 	<key>CFBundleDisplayName</key>
-	<string>她的信息本</string>
+	<string>我的宝宝江林桐</string>
 
 	<!-- ① 地理围栏（ReminderService）要的用途说明。
 	        没有它：区域监听注册不上去，场景提醒永远不响。 -->
@@ -35,7 +32,7 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>用来锁住她的信息，只有你能打开</string>
 
-	<!-- ③ 让「她的信息本」出现在系统「文件」App 里（35 屏导出的落点）。
+	<!-- ③ 让这个 App 出现在系统「文件」App 里（35 屏导出的落点）。
 	        这一条是「被看见」的开关，不是「能写文件」的开关 ——
 	        沙盒里写文件本来就可以，写完了看不见而已。 -->
 	<key>UIFileSharingEnabled</key>

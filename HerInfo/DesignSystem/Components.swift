@@ -1,6 +1,6 @@
 //
 //  Components.swift
-//  她的信息本 · 复用组件层
+//  我的宝宝江林桐 · 复用组件层
 //
 //  36 屏里的每个组件在这里只有一个实现。视图文件只做「组合」，
 //  不自己写样式 —— 这是让 36 屏看起来是一套东西的唯一办法。
@@ -717,13 +717,18 @@ struct TabPill: View {
 }
 
 enum HomeTab: String, CaseIterable, Identifiable {
-    case home, category, search, remind
+    /// **顺序就是 tab 栏里从左到右的顺序。**
+    /// 生理期排在「分类」与「搜索」之间 —— 画布 37 屏上就是这个位次：
+    /// 它是一件「要经常看一眼」的事，不是设置类的深入口。
+    /// 加一个 case，`TabPill` 那边靠 `allCases` 自动多一格，那里不用改。
+    case home, category, cycle, search, remind
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .home:     return "首页"
         case .category: return "分类"
+        case .cycle:    return "生理期"
         case .search:   return "搜索"
         case .remind:   return "提醒"
         }
@@ -734,6 +739,8 @@ enum HomeTab: String, CaseIterable, Identifiable {
         switch self {
         case .home:     return "house"
         case .category: return "square.grid.2x2"
+        // 37 屏那颗是自绘的「一圈点」，SF Symbols 里最接近的语义是循环。
+        case .cycle:    return "arrow.triangle.2.circlepath"
         case .search:   return "magnifyingglass"
         case .remind:   return "bell"
         }

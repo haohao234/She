@@ -7,7 +7,7 @@
 //    Markdown → 拼字符串，给人读的，标题层级对应分类
 //    PDF      → UIGraphicsPDFRenderer 排版，排版固定、不依赖任何 App
 //
-//  导出全部落「文件」App 的 onMyiPhone/她的信息本/ 下 ——
+//  导出全部落「文件」App 的 onMyiPhone/我的宝宝江林桐/ 下 ——
 //  用户能自己找到、能自己删除。不做「分享到某个云」，因为数据不出本机是这个 App 的承诺。
 //
 
@@ -29,7 +29,7 @@ final class ExportService {
 
         let dir = try exportDirectory()
         let stamp = DateFormatter.fileStamp.string(from: .now)
-        let name = "她的信息本-\(stamp).\(format.ext)"
+        let name = "我的宝宝江林桐-\(stamp).\(format.ext)"
         let url = dir.appendingPathComponent(name)
 
         switch format {
@@ -68,7 +68,7 @@ final class ExportService {
     /// 这份 JSON 换到新手机上就是一堆指向空气的 hash，
     /// 而注释里那句「换机时按 hash 重新关联」也就成了一句空话。
     ///
-    /// 目录名取 `她的信息本-20260911-1130 配图`：与文件并排、名字对得上，
+    /// 目录名取 `我的宝宝江林桐-20260911-1130 配图`：与文件并排、名字对得上，
     /// 用户在「文件」里一眼看得出这两样是一起的。
     private func copyPhotos(_ records: [Record], beside fileURL: URL) {
         let hashes = Set(records.flatMap { $0.photos.map(\.hash) })
@@ -92,9 +92,16 @@ final class ExportService {
         }
     }
 
+    /// 导出落点：`文件 App / onMyiPhone / 我的宝宝江林桐 /`。
+    ///
+    /// **这个名字跟 App 显示名走，但它不是数据格式。**
+    /// 换名字时老目录不会被搬走 —— 用户如果之前导出过，会看到两个目录。
+    /// 这是刻意的：**搬目录要读旧文件、可能失败，而失败时用户看到的是
+    /// 「我的备份不见了」**。宁可多一个空目录，也不要动已有的文件。
+    /// 真要清，让用户自己去「文件」里删。
     private func exportDirectory() throws -> URL {
         let base = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dir = base.appendingPathComponent("她的信息本", isDirectory: true)
+        let dir = base.appendingPathComponent("我的宝宝江林桐", isDirectory: true)
         if !FileManager.default.fileExists(atPath: dir.path) {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         }
@@ -200,7 +207,7 @@ final class ExportService {
                               includeReminders: Bool) -> String {
         let revBy = Dictionary(grouping: revisions, by: \.recordID)
 
-        var out = "# 她的信息本\n\n"
+        var out = "# 我的宝宝江林桐\n\n"
         out += "导出时间：\(DateFormatter.cnFull.string(from: .now))　·　\(records.count) 条\n\n"
 
         // 按分类分章 —— 这是 Markdown 的优势：标题层级天然就是目录。
@@ -249,7 +256,7 @@ final class ExportService {
             ctx.beginPage()
 
             // 标题
-            let title = "她的信息本"
+            let title = "我的宝宝江林桐"
             title.draw(at: CGPoint(x: margin, y: y), withAttributes: [
                 .font: UIFont.systemFont(ofSize: 24, weight: .semibold),
                 .foregroundColor: UIColor(hex: 0x1F1E1B)

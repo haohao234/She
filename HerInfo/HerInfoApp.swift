@@ -1,6 +1,6 @@
 //
 //  HerInfoApp.swift
-//  她的信息本 · 应用入口
+//  我的宝宝江林桐 · 应用入口
 //
 //  【Xcode 里怎么起】
 //  1. File → New → Project → iOS App，Interface 选 SwiftUI，Language 选 Swift

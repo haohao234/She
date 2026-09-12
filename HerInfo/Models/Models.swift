@@ -1,6 +1,6 @@
 //
 //  Models.swift
-//  她的信息本 · 数据模型层（SwiftData，iOS 17+）
+//  我的宝宝江林桐 · 数据模型层（SwiftData，iOS 17+）
 //
 //  字段与设计规范页「数据模型建议」逐条对应，示例值也取自原型里的真实数据。
 //  每条字段后面都标了它对应哪一屏 —— 这是为了反过来检验：
@@ -348,6 +348,157 @@ enum MoodSource: String, Codable {
     case quickAction
 }
 
+// MARK: - 生理期
+
+/// 对应 37 生理期首页 / 38 记录经期 / 39 周期记录 / 40 经期提醒 / 41 空态。
+///
+/// **一条记录 = 一次经期**（开始日 + 持续几天），不是「一天一条」。
+/// 这是这一块最要紧的选择：记的是「这次」，不是「今天她来了」。
+/// 按天存的话，用户要么每天来点一次、要么我们就得猜她哪天结束；
+/// 按「一次」存，只需要她记开始那天 —— 剩下的是算出来的。
+@Model
+final class CyclePeriod {
+
+    @Attribute(.unique) var id: String
+
+    /// 这次经期的**第一天**。整个模型只围绕这一个日子展开。
+    var startedAt: Date
+
+    /// 持续几天。38 屏给的是 3~7 的快捷胶囊。
+    ///
+    /// **默认 5 天，但这不是医学默认值** —— 它是「不确定就先按 5 天算」。
+    /// 所以这个字段允许是一个「用户没明说」的值，界面上不能假装她填过。
+    var durationDays: Int
+
+    /// 是不是用户手动填的。
+    /// 目前只有手动一种，留下它是为了将来「按规律自动补一条」时，
+    /// 界面上能区分「她真的来了」和「我们猜她来了」——
+    /// **这两件事在界面上的分量完全不同，不能长得一样。**
+    var isManual: Bool
+
+    var createdAt: Date
+
+    init(id: String = "c_" + UUID().uuidString.prefix(6).lowercased(),
+         startedAt: Date,
+         durationDays: Int = 5,
+         isManual: Bool = true,
+         createdAt: Date = .now) {
+        self.id = id
+        self.startedAt = startedAt
+        self.durationDays = durationDays
+        self.isManual = isManual
+        self.createdAt = createdAt
+    }
+}
+
+// MARK: - 生理期统计
+
+/// 从一串 `CyclePeriod` 里算出来的全部派生量。
+///
+/// **一个都不落库。** 这样「改了一次开始日」之后，首页 / 趋势 / 提醒三处
+/// 不可能各自显示不同的数字 —— 它们读的是同一个入参。
+/// 理由与 31 屏的「不存快照」同源：多存一份就是第二份真相。
+struct CycleStats {
+
+    /// 推算用的周期长度。**28 天是社会常识值、不是医学判断** ——
+    /// 40 屏页脚那句「不是医学判断」说的就是这件事。
+    /// 一旦有 ≥2 次记录，就用实际平均覆盖它。
+    static let defaultCycle = 28
+
+    /// 38 屏给的是 3~7 天。
+    static let durationRange = 3...7
+
+    /// 已按开始日从新到旧排好。
+    let periods: [CyclePeriod]
+
+    init(periods: [CyclePeriod]) {
+        self.periods = periods.sorted { $0.startedAt > $1.startedAt }
+    }
+
+    var isEmpty: Bool { periods.isEmpty }
+    var latest: CyclePeriod? { periods.first }
+
+    /// 平均周期天数。**不足两次时退回 28** —— 一次记录算不出周期，这是数学事实。
+    var averageCycle: Int {
+        let gaps = validGaps
+        guard !gaps.isEmpty else { return Self.defaultCycle }
+        return Int((Double(gaps.reduce(0, +)) / Double(gaps.count)).rounded())
+    }
+
+    /// 波动 ±N 天。**不足两次时为 nil** —— 界面据此不显示，而不是显示 ±0 天。
+    var wobble: Int? {
+        let gaps = validGaps
+        guard let mx = gaps.max(), let mn = gaps.min() else { return nil }
+        return max(0, (mx - mn) / 2)
+    }
+
+    /// 相邻两次之间的间隔。
+    ///
+    /// **明显不合理的间隔（<15 天或 >60 天）不参与统计** ——
+    /// 一次误记（比如同一次经期被记了两遍）会把平均值与稳定性彻底带歪，
+    /// 而屏幕上「28 天」变成「16 天」时，用户不会想到是自己那条误记。
+    /// 宁可退回常识值，也不要一个被污染的数字。
+    private var validGaps: [Int] {
+        guard periods.count >= 2 else { return [] }
+        return (0..<(periods.count - 1))
+            .map { days(from: periods[$0 + 1].startedAt, to: periods[$0].startedAt) }
+            .filter { $0 >= 15 && $0 <= 60 }
+    }
+
+    var nextStart: Date? {
+        guard let last = latest else { return nil }
+        return Calendar.current.date(byAdding: .day, value: averageCycle, to: last.startedAt)
+    }
+
+    /// 今天是不是落在某一次经期里。
+    func currentPeriod(on today: Date = .now) -> CyclePeriod? {
+        periods.first { p in
+            let d = days(from: p.startedAt, to: today)
+            return d >= 0 && d < p.durationDays
+        }
+    }
+
+    /// 「经期第 N 天」。不在经期中时为 nil。
+    func currentDay(on today: Date = .now) -> Int? {
+        guard let p = currentPeriod(on: today) else { return nil }
+        return days(from: p.startedAt, to: today) + 1
+    }
+
+    /// 还有几天结束。**环心说「4 天后结束」而不是「已经第 3 天」** ——
+    /// 前者回答的是「还要难受几天」，比后者有用。
+    func daysUntilEnd(on today: Date = .now) -> Int? {
+        guard let p = currentPeriod(on: today) else { return nil }
+        return p.durationDays - days(from: p.startedAt, to: today)
+    }
+
+    /// 距离下次经期还有几天。**负值有意义** —— 表示已经过了预测日还没记，
+    /// 界面应当据此说「比预计晚了 N 天」而不是把数字吞掉。
+    func daysUntilNext(on today: Date = .now) -> Int? {
+        guard let n = nextStart else { return nil }
+        return days(from: today, to: n)
+    }
+
+    /// 39 屏那 6 根柱子。
+    var recentSix: [CyclePeriod] { Array(periods.prefix(6)) }
+
+    /// 「很规律」的判据。**给说法不给分数** —— 界面上只有「很规律 / 有点波动」
+    /// 两种说法，没有百分制。做一个精确到小数点的「规律指数」，
+    /// 等于让用户在身体本来就会波动的事上追求一个不该追求的数字。
+    var isRegular: Bool {
+        guard periods.count >= 3, let w = wobble else { return false }
+        return w <= 3
+    }
+
+    /// 两次相隔几天。**必须归零时分再比** —— 否则「今天 09:00 → 明天 01:00」
+    /// 与「今天 09:00 → 今天 20:00」都是同一天的事，却会算出 1 和 0 两个答案。
+    func days(from: Date, to: Date) -> Int {
+        let cal = Calendar.current
+        return cal.dateComponents([.day],
+                                  from: cal.startOfDay(for: from),
+                                  to: cal.startOfDay(for: to)).day ?? 0
+    }
+}
+
 // MARK: - 历史版本
 
 /// 对应 07 历史版本 · **恢复 = 新增一条，不覆盖** ——
@@ -398,7 +549,10 @@ enum HerInfoStore {
         Profile.self,
         Reminder.self,
         Mood.self,
-        Revision.self
+        Revision.self,
+        // 生理期（37~41 屏）。**新模型必须登记在这里** ——
+        // 少写一个类型，运行时就是「找不到 model」的崩溃，编译期一声不吭。
+        CyclePeriod.self
     ])
 
     /// 应用用这个（落盘）。

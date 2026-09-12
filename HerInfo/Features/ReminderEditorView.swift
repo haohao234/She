@@ -241,7 +241,9 @@ struct ReminderEditorView: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
-                        Text("她的信息本")
+                        // 通知横幅上那个「发件人」名字。必须与 CFBundleDisplayName
+                        // 一致 —— 否则真机弹出来的通知与这里预览的不是同一个名字。
+                        Text("我的宝宝江林桐")
                             .font(Typo.captionM)
                             .foregroundStyle(C.ink)
                         Spacer()

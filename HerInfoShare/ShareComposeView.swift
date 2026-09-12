@@ -75,7 +75,7 @@ struct ShareComposeView: View {
 
     private var header: some View {
         ZStack {
-            Text("存进她的信息本")
+            Text("存进我的宝宝江林桐")
                 .font(.headline)
                 .foregroundStyle(Color(uiColor: .label))
 

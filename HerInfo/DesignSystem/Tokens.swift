@@ -1,6 +1,6 @@
 //
 //  Tokens.swift
-//  她的信息本 · 设计令牌层
+//  我的宝宝江林桐 · 设计令牌层
 //
 //  这一层是设计稿与代码之间唯一的接口。
 //  36 屏里出现的每一个颜色、字号、圆角、间距都只能从这里取，
@@ -129,6 +129,41 @@ enum C {
     static let moodGoodSoft  = Color.dual(0xF2F5EE, 0x232C20)
     static let moodTiredSoft = Color.dual(0xF8F2E6, 0x352D1E)
     static let moodDownSoft  = Color.dual(0xFBF8F4, 0x3A2621)
+}
+
+// MARK: - 生理期（37~41 屏）
+
+/// 生理期专用的四档色。
+///
+/// **刻意不给生理期一个「专属粉」** —— 这是这块设计上最要紧的一条分寸。
+/// 粉 = 生理期是最省事的做法，但它同时也说了一句「这是件特殊的事」，
+/// 而这里要的恰恰是「平常地记一下」。所以：
+/// 经期用主色（她本来就是主角）、易孕用「在意的事」那支草木绿、
+/// 底弧用「性格与外貌」那支砂色。**全部是已有色相的引用，
+/// 一个新 hex 都没造** —— 于是深色档自动跟着已有那套走，不会漂。
+enum CYC {
+
+    /// 经期：主色。**引用不重抄** —— 抄一遍就是一处将来会漂移的副本。
+    static let period     = C.primary
+
+    /// 经期浅底（日期块底、统计块的底）。
+    static let periodSoft = C.warm
+
+    /// 易孕窗口：草木绿（= 在意的事那支）。
+    static let fertile    = Category.care.tint
+
+    /// 非经期那段的底弧。比页面底深一点点就够。
+    static let track      = Color.dual(0xEDE6DC, 0x2E2823)
+
+    /// 40 屏页脚那句「不是医学判断」的底与字。
+    /// **用砂色不用 danger** —— 它是「说明」不是「警告」，
+    /// 拿危险色就把它写成了一条错误，而它其实是句实话。
+    ///
+    /// 字的深色档直接引用分类色，**不把 hex 再抄一遍** ——
+    /// 抄一遍 `0xC79A5C` 就是又造了一处将来会漂移的副本
+    /// （这行最早就是抄的，被 `check-swift.js` 的「共用色防漂移」抓了一次）。
+    static let noteBg  = C.sand
+    static let noteInk = Color.dual(0x8A6532, HINotify.Cat.trait_.darkHex)
 }
 
 // MARK: - 分类

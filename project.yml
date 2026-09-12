@@ -114,7 +114,7 @@ targets:
         embed: true
         codeSign: true
       # 分享扩展同理。**漏了这一条的表现**：分享面板里看不到
-      # 「存进她的信息本」—— 不报错，只是那一项不存在。
+      # 「存进我的宝宝江林桐」—— 不报错，只是那一项不存在。
       - target: HerInfoShare
         embed: true
         codeSign: true
