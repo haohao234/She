@@ -28,6 +28,23 @@
 //     一屏 9 张就是 100MB+，列表滚动直接卡死。
 //     `CGImageSourceCreateThumbnailAtIndex` 只解出要用的那点像素。
 //
+//  【曾经会闪退：写入侧把整张原图解开了】
+//  上面第 ③ 条只管了「读」。**写入侧当时是漏的** ——
+//  `save` 收的是 `UIImage`，而 `UIImage(data:)` 是**懒解码**：
+//  它只拿着压缩字节，真正解成位图是在第一次 `draw` 的时候。
+//  于是 `jpegData` 里那句 `image.draw(in:)` 就是「第一次」，
+//  一张 8064×6048 的 48MP 原图要在那一刻一次性解出约 195MB 的位图。
+//  两个后果叠在一起，就是用户在真机上看到的「导入失败然后闪退」：
+//    · 内存一紧，解码先失败 → 格子不出现（看起来像「导入失败」）
+//    · 再紧一点，App 被系统直接杀掉（就是闪退）
+//  而且 `Task.detached` 跑在协作线程池上，**那条线程的自动释放池
+//  可能整批图处理完都不会清一次**，9 张图就是 9 份临时缓冲一起堆着。
+//
+//  **修法是让写入侧和读取侧用同一招**：入参从 `UIImage` 换成相册给的
+//  原始 `Data`，用 `CGImageSourceCreateThumbnailAtIndex` 只解出长边 ≤ 2048
+//  的那点像素（≈12MB），原图从头到尾没有被整张解开过；
+//  再用 `autoreleasepool` 把每张图的临时对象在那一轮就放掉。
+//
 
 import UIKit
 import CryptoKit
@@ -62,12 +79,35 @@ enum PhotoStore {
 
     /// 存一张图，返回它的 hash（内容寻址）。
     ///
+    /// **入参是相册给的原始字节，不是 `UIImage`** —— 理由见文件头
+    /// 「曾经会闪退：写入侧把整张原图解开了」。简单说：只要不构造 `UIImage`，
+    /// 就不可能有一整张原图的位图被解出来。
+    ///
     /// 返回 nil = 存不下来。**调用方应该安静跳过，而不是把整条记录也存失败** ——
     /// 一张图没存上，不该连她写的那句话一起丢掉。
     @discardableResult
-    static func save(_ image: UIImage) -> String? {
-        guard let data = jpegData(image, maxPixel: maxPixel) else { return nil }
-        let hash = digest(data)
+    static func save(_ data: Data) -> String? {
+        guard let jpeg = jpegData(from: data, maxPixel: maxPixel) else { return nil }
+        return persist(jpeg)
+    }
+
+    /// 异步存。**界面一律走这个，不要直接调 `save`** ——
+    /// 降采样 + JPEG 编码 + 写文件是几十到上百毫秒的活，
+    /// 连着存 9 张就是肉眼可见的卡顿。相册选完图那一下正落在主线程上。
+    static func saveAsync(_ data: Data) async -> String? {
+        await Task.detached(priority: .userInitiated) {
+            // **`autoreleasepool` 不能省。**
+            // `Task.detached` 跑在协作线程池上，那条线程什么时候清自动释放池
+            // 不由我们决定 —— 实测上它可能在「整批图都处理完」之前都不清。
+            // 少了这一层，每一轮解码与渲染产生的临时缓冲会一直堆着：
+            // 选 9 张就是 9 份。包一层 = 每张图处理完就把临时对象放掉。
+            autoreleasepool { save(data) }
+        }.value
+    }
+
+    /// 内容寻址的那一步：算了 hash，文件已经在就沿用，不在才写。
+    private static func persist(_ jpeg: Data) -> String? {
+        let hash = digest(jpeg)
         let target = url(for: hash)
 
         // 同一张图（内容一模一样）已经有文件了 —— 直接沿用，不重写。
@@ -75,40 +115,56 @@ enum PhotoStore {
 
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try data.write(to: target, options: .atomic)
+            try jpeg.write(to: target, options: .atomic)
         } catch {
             return nil
         }
         return hash
     }
 
-    /// 异步存。**界面一律走这个，不要直接调 `save`** ——
-    /// 缩放渲染 + JPEG 编码 + 写文件是几十到上百毫秒的活，
-    /// 连着存 9 张就是肉眼可见的卡顿。相册选完图那一下正落在主线程上。
-    static func saveAsync(_ image: UIImage) async -> String? {
-        await Task.detached(priority: .userInitiated) { save(image) }.value
-    }
+    /// 压到长边 ≤ maxPixel 再转 JPEG。**入参是原图字节。**
+    ///
+    /// 分两步，两步都有理由：
+    ///
+    /// ① `CGImageSourceCreateThumbnailAtIndex` —— 只解出要用的那点像素。
+    ///    它与下面「读」那一侧的 `decode` 是同一个办法：写和读从此不再是两套。
+    ///    `kCGImageSourceCreateThumbnailWithTransform` 顺手把 EXIF 方向烤进像素里，
+    ///    所以竖拍的照片不会在这里躺倒（这一点以前只在读的时候管了）。
+    ///
+    /// ② `UIGraphicsImageRenderer` 再画一遍 —— 不是为了缩放（①已经缩完了），
+    ///    只是为了把颜色空间统一、并且用 `opaque = true` 丢掉透明通道，让 JPEG 更小。
+    ///    用 `UIGraphicsImageRenderer` 而不是 `UIGraphicsBeginImageContext`：
+    ///    后者在 @3x 设备上会按屏幕缩放因子出图，同一张原图在三台设备上得到三种尺寸，
+    ///    而内容哈希要求「同一张图在任何设备上都要算出同一个 hash」。
+    ///    所以这里把 scale 固定成 1，尺寸完全由像素决定。
+    static func jpegData(from data: Data, maxPixel: CGFloat) -> Data? {
+        guard !data.isEmpty else { return nil }
 
-    /// 压到长边 ≤ maxPixel 再转 JPEG。    ///
-    /// 用 `UIGraphicsImageRenderer` 而不是 `UIGraphicsBeginImageContext`：
-    /// 后者在 @3x 设备上会按屏幕缩放因子出图，同一张原图在三台设备上得到三种尺寸，
-    /// 而内容哈希要求「同一张图在任何设备上都要算出同一个 hash」。
-    /// 所以这里把 scale 固定成 1，尺寸完全由像素决定。
-    static func jpegData(_ image: UIImage, maxPixel: CGFloat) -> Data? {
-        let w = image.size.width * image.scale
-        let h = image.size.height * image.scale
-        guard w > 0, h > 0 else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceShouldCache: false,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel
+        ]
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, options as CFDictionary)
+        else { return nil }
 
-        let ratio = min(1, maxPixel / max(w, h))
-        let size = CGSize(width: (w * ratio).rounded(), height: (h * ratio).rounded())
+        let seed = UIImage(cgImage: cg)
+        let w = seed.size.width * seed.scale
+        let h = seed.size.height * seed.scale
+        // `isFinite` 那一句不是凑数的：`UIGraphicsImageRenderer` 拿到 NaN
+        // 尺寸时不是返回 nil，是直接抛异常。护栏要拦在它前面。
+        guard w.isFinite, h.isFinite, w > 0, h > 0 else { return nil }
+        let size = CGSize(width: w.rounded(), height: h.rounded())
 
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = 1
         format.opaque = true          // 照片没有透明通道，不透明能让 JPEG 更小
-        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: size))
+        let flattened = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            seed.draw(in: CGRect(origin: .zero, size: size))
         }
-        return resized.jpegData(compressionQuality: jpegQuality)
+        return flattened.jpegData(compressionQuality: jpegQuality)
     }
 
     /// 内容哈希：SHA-256 取前 8 字节 = 16 个 hex 字符。

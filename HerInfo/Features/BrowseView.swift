@@ -350,8 +350,11 @@ struct RecordDetailView: View {
 
     /// 配图，按 order 排 —— 那个顺序是用户在编辑器里一张张拖出来的，
     /// 不是随机的。详情页如果按数据库返回顺序画，编辑时的拖动就白做了。
+    ///
+    /// 出去重是必须的：`PhotoGrid` 拿 hash 当 `ForEach` 的 id，
+    /// 重复 id 在 `LazyVGrid` 底下会直接抛异常。理由见 `Photo.uniqueHashes`。
     private var photoHashes: [String] {
-        (record?.photos ?? []).sorted { $0.order < $1.order }.map(\.hash)
+        Photo.uniqueHashes((record?.photos ?? []).sorted { $0.order < $1.order }.map(\.hash))
     }
 
     private var history: [Revision] {

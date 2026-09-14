@@ -108,6 +108,24 @@ final class Photo {
     /// 一条记录最多 9 张。到顶后 34 屏的添加格置灰 ——
     /// 不给「还能再加」的错觉，比加完再报错好。
     static let maxPerRecord = 9
+
+    /// 按顺序去重。**读出来显示之前必须过一遍。**
+    ///
+    /// `PhotoGrid` 用 hash 当 `ForEach` 的 id（内容寻址天然唯一，所以当时
+    /// 直接写了 `id: \.self`）。这条假设在**写入侧**是成立的：`ingest` 有
+    /// `!photoHashes.contains(hash)` 那道去重，`save` 也是先
+    /// `first(where:)` 找到了就复用、不会插第二条。
+    ///
+    /// 但「恢复历史版本」那条路是照 `Revision.photoHashes` 整份重放的，
+    /// 一旦某个快照和当前记录撞上同一张图，同一条记录里就会出现两行同 hash 的
+    /// `Photo`。而 `LazyVGrid` 底下是差分数据源，**标识符不唯一会直接抛异常**
+    /// —— 那是一条会闪退的路，且崩在渲染列表的时候，离现场很远。
+    ///
+    /// 所以去重放在「读”这一侧：写入侧那两道是优化，这里才是保证。
+    static func uniqueHashes(_ hashes: [String]) -> [String] {
+        var seen = Set<String>()
+        return hashes.filter { seen.insert($0).inserted }
+    }
 }
 
 // MARK: - 她的档案

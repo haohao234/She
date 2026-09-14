@@ -270,7 +270,11 @@ struct VersionHistoryView: View {
             ctx.delete(p)
         }
         for (idx, h) in v.photoHashes.enumerated() {
-            if let p = r.photos.first(where: { $0.hash == h }) {
+            // `!p.isDeleted` 与 34 屏 `RecordEditorView.save` 里那一处是同一个理由：
+            // `ctx.delete(p)` 只是登记删除，上面的 `r.photos` 要到下一次 save
+            // 才会真的少掉这一条 —— 这个 `first(where:)` 可能捞回一个刚被登记
+            // 删除的对象，往它身上写 `order` 会让 SwiftData 直接 fatalError。
+            if let p = r.photos.first(where: { $0.hash == h && !$0.isDeleted }) {
                 p.order = idx
             } else {
                 let p = Photo(hash: h, order: idx)

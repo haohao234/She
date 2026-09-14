@@ -57,6 +57,13 @@ struct RecordEditorView: View {
     @State private var picked: [PhotosPickerItem] = []
     @State private var pickingPhotos = false
 
+    /// 正在导入。**一次只跑一批。**
+    ///
+    /// 上一批还在读相册（iCloud 里的图要现下载，可能好几秒），用户又点了一次「＋」，
+    /// 两批就会交叉：先结束的那批会把 `picked` 清成空数组，
+    /// 把后选的那张从选择结果里直接抹掉 —— 界面上的表现是「选了，但没进来」。
+    @State private var importing = false
+
     /// 上一次落盘时的内容指纹。**它决定「要不要涨版本」** ——
     /// 没有它的话，点一下输入框再离开也能涨一版，
     /// 31 屏那个「第 12 版」就成了一句没有含义的话。
@@ -349,22 +356,50 @@ struct RecordEditorView: View {
     ///   ① 选中的原图 → 压缩副本（长边 2048 / JPEG 0.82，PhotoStore 里做）
     ///   ② 压缩后的字节算 SHA-256 → 当文件名（内容寻址）
     ///   ③ 只把 hash 存进数组
+    ///
+    /// **这里不再构造 `UIImage`。** 以前是
+    /// `UIImage(data:) → PhotoStore.saveAsync(raw)`，看似没问题 ——
+    /// 但 `UIImage(data:)` 是懒解码，真正把一张 48MP 原图解成位图（≈195MB）
+    /// 发生在 `PhotoStore` 里那句 `draw` 上。改成直接把原始 `Data` 交给
+    /// `PhotoStore` 之后，解码由 ImageIO 的缩略图接口只做长边 ≤ 2048 那一份。
+    /// 这一段是「导入失败然后闪退」的现场，理由写在 `PhotoStore` 文件头。
     @MainActor
     private func ingest(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
+        // 正在导入时把这一批退回去，并清掉选择态 ——
+        // 留着的话相册那边会显示「已选中」，而这里永远不会处理它。
+        guard !importing else { picked = []; return }
+        importing = true
+
         Task {
+            // 数一下有几张没读出来。以前是**完全安静地跳过**：
+            // 格子不出现、也没有任何解释，看起来就是「点了没反应」。
+            var failed = 0
+
             for item in items {
                 guard photoHashes.count < Photo.maxPerRecord else { break }
+
                 // 一张图读不出来就跳过。**不该因为她选的某一张有问题，
                 // 连她已经写好的那句话一起存不上。**
                 guard let data = try? await item.loadTransferable(type: Data.self),
-                      let raw = UIImage(data: data),
-                      let hash = await PhotoStore.saveAsync(raw)
-                else { continue }
+                      !data.isEmpty,
+                      let hash = await PhotoStore.saveAsync(data)
+                else { failed += 1; continue }
+
                 // 内容寻址：同一张照片再选一次，不会变成两格。
                 if !photoHashes.contains(hash) { photoHashes.append(hash) }
             }
+
             picked = []
+            importing = false
+
+            // 说不出来由的失败最像 bug。这里只讲事实、给一个能做的动作，
+            // 不报错码、不说「请重试」，也不拦着用户接着用。
+            if failed > 0 {
+                ToastCenter.shared.show(failed == items.count
+                                        ? "这张图没能读出来，换一张试试"
+                                        : "有 \(failed) 张没能读出来，其余已经加进去了")
+            }
         }
     }
 
@@ -379,7 +414,7 @@ struct RecordEditorView: View {
             title = r.title
             body_ = r.body
             tags = r.tags
-            photoHashes = r.photos.sorted { $0.order < $1.order }.map(\.hash)
+            photoHashes = Photo.uniqueHashes(r.photos.sorted { $0.order < $1.order }.map(\.hash))
             remindsMe = r.reminder?.isOn ?? false
             version = r.version
             lastSnapshot = snapshot
@@ -462,7 +497,14 @@ struct RecordEditorView: View {
             ctx.delete(p)
         }
         for (idx, h) in photoHashes.enumerated() {
-            if let p = target.photos.first(where: { $0.hash == h }) {
+            // `!p.isDeleted` 那一句不能省。
+            // `ctx.delete(p)` 只是**登记**删除，`target.photos` 要到下一次 save
+            // 之后才会真的少掉这一条 —— 于是这个 `first(where:)` 有可能捞回一个
+            // 刚刚在上一个循环里被登记删除的对象。往它身上写 `order`，
+            // SwiftData 会直接 fatalError（"model instance was invalidated…"），
+            // 表现就是「删掉一张图再保存 → 闪退」。
+            // 判成「没找到」之后会走下面的 else 插一条新的，行为也是对的。
+            if let p = target.photos.first(where: { $0.hash == h && !$0.isDeleted }) {
                 p.order = idx
             } else {
                 let p = Photo(hash: h, order: idx)

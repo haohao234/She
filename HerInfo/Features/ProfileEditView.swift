@@ -132,13 +132,17 @@ struct ProfileEditView: View {
 
     /// 换头像。跟 34 屏的配图走同一条管线 ——
     /// 唯一区别是这里只留一张，所以不用数组。
+    ///
+    /// 也跟 34 屏一样**不构造 `UIImage`**：原始字节直接交给 `PhotoStore`，
+    /// 由它用 ImageIO 只解出长边 ≤ 2048 那一份。以前这里多了个
+    /// `UIImage(data:)`，看上去无害，其实是让整张原图在解码那一刻进内存。
     @MainActor
     private func ingestAvatar(_ item: PhotosPickerItem?) {
         guard let item else { return }
         Task {
             if let data = try? await item.loadTransferable(type: Data.self),
-               let raw = UIImage(data: data),
-               let hash = await PhotoStore.saveAsync(raw) {
+               !data.isEmpty,
+               let hash = await PhotoStore.saveAsync(data) {
                 avatarHash = hash
             }
             pickedAvatar = nil
