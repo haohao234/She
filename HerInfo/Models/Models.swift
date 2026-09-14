@@ -70,7 +70,25 @@ final class Record {
         self.updatedAt = updatedAt
     }
 
-    static func newID() -> String { "r_" + UUID().uuidString.prefix(6).lowercased() }
+    /// **12 位十六进制，不是 6 位。** 2026-09-14 从 `prefix(6)` 提上来的。
+    ///
+    /// 这个 id 是 `@Attribute(.unique)` 的键，六个模型都用同一招生成
+    /// （`r_` 记录 / `p_` 图片 / `m_` 提醒 / `d_` 心情 / `c_` 周期 / `v_` 版本）。
+    /// 原来取 `UUID().uuidString.prefix(6)` = `16^6` ≈ 1677 万个可能值，
+    /// 也就是 **24 bit 熵** —— 对一张会长期增长的表，这个空间小得危险：
+    ///
+    ///     表里行数    300     1000     2000     3000     5000
+    ///     至少撞一次  0.27%    2.9%    11.2%    23.5%    52.5%
+    ///
+    /// 而全项目 14 处 `ctx.save()` 都是 `try? ctx.save()` **一个字都不报**，
+    /// 真撞上只会静默丢数据或改错行。最容易撞的是 `Revision`
+    /// —— 它每次编辑 +1 就插一行，是这几张表里长得最快的。
+    ///
+    /// 12 位 = `16^12` ≈ 48 bit：一万行撞一次的概率是 1.8e-5 %。
+    /// **改长不改短、不改前缀，也不需要迁移** —— 老的 6 位 id 仍是合法的
+    /// 字符串主键，与新 id 共存没有任何问题（它们本来就只是不重复的字符串）。
+    /// 唯一的可见影响是导出的 JSON 里 id 变长，设计规范里的示例已同步成 12 位。
+    static func newID() -> String { "r_" + UUID().uuidString.prefix(12).lowercased() }
 }
 
 // MARK: - 图片
@@ -95,7 +113,8 @@ final class Photo {
 
     var record: Record?
 
-    init(id: String = "p_" + UUID().uuidString.prefix(6).lowercased(),
+    // id 取 12 位，理由见 `Record.newID()`（6 位 = 24 bit，会撞唯一约束且撞了不报错）。
+    init(id: String = "p_" + UUID().uuidString.prefix(12).lowercased(),
          hash: String,
          order: Int,
          addedAt: Date = .now) {
@@ -222,7 +241,8 @@ final class Reminder {
 
     var record: Record?
 
-    init(id: String = "m_" + UUID().uuidString.prefix(6).lowercased(),
+    // id 取 12 位，理由见 `Record.newID()`。
+    init(id: String = "m_" + UUID().uuidString.prefix(12).lowercased(),
          kind: ReminderKind,
          title: String,
          repeatRule: RepeatRule = .none,
@@ -303,7 +323,8 @@ final class Mood {
     /// 手动 / 锁屏 / 快捷指令 / 分享扩展。留一个 .chat 值就等于把违规路径写进了模型。
     var source: MoodSource
 
-    init(id: String = "d_" + UUID().uuidString.prefix(6).lowercased(),
+    // id 取 12 位，理由见 `Record.newID()`。
+    init(id: String = "d_" + UUID().uuidString.prefix(12).lowercased(),
          level: MoodLevel,
          at: Date = .now,
          source: MoodSource = .manual) {
@@ -401,7 +422,8 @@ final class CyclePeriod {
 
     var createdAt: Date
 
-    init(id: String = "c_" + UUID().uuidString.prefix(6).lowercased(),
+    // id 取 12 位，理由见 `Record.newID()`。
+    init(id: String = "c_" + UUID().uuidString.prefix(12).lowercased(),
          startedAt: Date,
          durationDays: Int = 5,
          isManual: Bool = true,
@@ -594,7 +616,9 @@ final class Revision {
 
     var at: Date
 
-    init(id: String = "v_" + UUID().uuidString.prefix(6).lowercased(),
+    // id 取 12 位，理由见 `Record.newID()`。
+    // **这个模型最该改**：每次编辑 +1 就插一行，是六张表里长得最快的。
+    init(id: String = "v_" + UUID().uuidString.prefix(12).lowercased(),
          recordID: String,
          version: Int,
          titleSnapshot: String,
