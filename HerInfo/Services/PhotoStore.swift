@@ -131,6 +131,14 @@ enum PhotoStore {
     ///    `kCGImageSourceCreateThumbnailWithTransform` 顺手把 EXIF 方向烤进像素里，
     ///    所以竖拍的照片不会在这里躺倒（这一点以前只在读的时候管了）。
     ///
+    ///    **`kCGImageSourceThumbnailMaxPixelSize` 是「上限」，不是「目标」。**
+    ///    Apple 的原话是「creates the thumbnail from the full image, **subject to
+    ///    the limit** specified by kCGImageSourceThumbnailMaxPixelSize」，
+    ///    而且这套选项里**根本没有「最小尺寸」那一项**（只能往下缩，不能要求放大）。
+    ///    所以源图比 maxPixel 小时，出来的就是源图自己那么大 ——
+    ///    上一版那句 `let ratio = min(1, maxPixel / max(w, h))` 的夹子因此不必再写，
+    ///    **不是忘了写。**
+    ///
     /// ② `UIGraphicsImageRenderer` 再画一遍 —— 不是为了缩放（①已经缩完了），
     ///    只是为了把颜色空间统一、并且用 `opaque = true` 丢掉透明通道，让 JPEG 更小。
     ///    用 `UIGraphicsImageRenderer` 而不是 `UIGraphicsBeginImageContext`：

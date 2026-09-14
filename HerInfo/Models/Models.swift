@@ -118,10 +118,15 @@ final class Photo {
     ///
     /// 但「恢复历史版本」那条路是照 `Revision.photoHashes` 整份重放的，
     /// 一旦某个快照和当前记录撞上同一张图，同一条记录里就会出现两行同 hash 的
-    /// `Photo`。而 `LazyVGrid` 底下是差分数据源，**标识符不唯一会直接抛异常**
-    /// —— 那是一条会闪退的路，且崩在渲染列表的时候，离现场很远。
+    /// `Photo`。**说清后果，不夸张**：
+    ///   · SwiftUI 在 id 重复时不保证行为 —— 运行时会打
+    ///     「the ID … occurs multiple times within the collection, this will give
+    ///     undefined results」这句警告，**它不承诺崩，但也不承诺不崩**；
+    ///   · **真正一定会错的是拖动排序**：`PhotoDropDelegate` 靠
+    ///     `hashes.firstIndex(of:)` 定位，重复值下永远命中第一个 ——
+    ///     拖的是第二张，动的是第一张。
     ///
-    /// 所以去重放在「读”这一侧：写入侧那两道是优化，这里才是保证。
+    /// 所以去重放在「读」这一侧：写入侧那两道是优化，这里才是保证。
     static func uniqueHashes(_ hashes: [String]) -> [String] {
         var seen = Set<String>()
         return hashes.filter { seen.insert($0).inserted }

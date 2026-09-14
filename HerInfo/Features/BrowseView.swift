@@ -352,7 +352,9 @@ struct RecordDetailView: View {
     /// 不是随机的。详情页如果按数据库返回顺序画，编辑时的拖动就白做了。
     ///
     /// 出去重是必须的：`PhotoGrid` 拿 hash 当 `ForEach` 的 id，
-    /// 重复 id 在 `LazyVGrid` 底下会直接抛异常。理由见 `Photo.uniqueHashes`。
+    /// 重复值会让 SwiftUI 进「不保证行为」的状态（并打
+    /// 「the ID … occurs multiple times」），详情页的拖动排序也一定定位错。
+    /// 理由见 `Photo.uniqueHashes`。
     private var photoHashes: [String] {
         Photo.uniqueHashes((record?.photos ?? []).sorted { $0.order < $1.order }.map(\.hash))
     }
