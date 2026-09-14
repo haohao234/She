@@ -102,10 +102,20 @@ struct RecordEditorView: View {
     var body: some View {
         VStack(spacing: 0) {
 
-            // 顶行：取消 / 标题 / 完成
+            // 顶行：返回 / 标题 / 完成
+            //
+            // **这颗按钮原来写的是「取消」，2026-09-13 改名成「返回」。**
+            // 「取消」在这个 App 里是一句假话：这一屏是自动保存的
+            // （下面那条状态条自己就写着「已自动保存 · 刚刚」），只要打过字、
+            // 选过图，0.8 秒后就已经落库了 —— 而这里只有一句 `path.removeLast()`，
+            // 它什么都不会取消。用户点它，是以为东西被丢掉了。
+            //
+            // 与「自动保存」相配的只有两颗：**离开**（这颗，返回）和
+            // **退回**（22 屏的撤销，见 `saveAndLeave`）。改名不动任何行为，
+            // 只是让按钮说真话；三态（03 新建 / 21 起手 / 34 编辑）一起换。
             HStack {
                 Button { path.removeLast() } label: {
-                    Text("取消")
+                    Text("返回")
                         .font(Typo.body)
                         .foregroundStyle(C.ink2)
                         .frame(width: 52, alignment: .leading)
@@ -546,17 +556,48 @@ struct RecordEditorView: View {
     /// 只有手动保存才弹。自动保存每 0.8 秒就可能落一次盘，
     /// 那个路径上弹提示会把屏幕变成闪光灯。
     private func saveAndLeave() {
-        // 什么都没写就按「保存记录」（21 屏起手卡点进来又直接退出，最容易走到这里）——
+        // 什么都没写就按「完成」（21 屏起手卡点进来又直接退出，最容易走到这里）——
         // 上面 `save` 会拒绝新建，于是**既不该留下记录，也不该弹提示**。
         // 弹「已记下」是在说一句假话：用户什么都没记。
         let willRecord = record != nil || snapshot != lastSnapshot
 
+        // **进来这一屏时是「新建」还是「编辑」。**
+        //
+        // 判据不能用 `record != nil` —— 自动保存早就可能把记录建出来了，
+        // 走到这一步 `record` 已经非 nil，那样撤销按钮就永远不会出现，
+        // 而「误存」恰恰就是这条路（打完字，手一滑点了完成）。
+        // `isEditing` 是进来时就定死的（取决于 `editingID` 是否为空），
+        // 它才是真正的答案。
+        let isDraft = !isEditing
+
         save()
+        let fresh: Record? = isDraft ? created : nil
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
         path.removeLast()
 
         guard willRecord else { return }
-        ToastCenter.shared.show(t.isEmpty ? "已记下" : "已记下「\(t)」")
+
+        let msg = t.isEmpty ? "已记下" : "已记下「\(t)」"
+
+        // 22 屏那颗「撤销」。**只配给「刚新建出来」的那一条 —— 这是有意的。**
+        //
+        // 22 屏这条提示存在的理由就是「误存」：手一滑点中「完成」，列表里凭空
+        // 多一条。编辑既有记录没有这个风险（没有新东西出现），要退回旧内容走
+        // 07 历史版本 —— 那里恢复一次也是一个新版本，比偷偷回滚诚实。
+        //
+        // 撤销的落点见 `HerInfoStore.discardDraft`：**它不进回收站。**
+        // 回收站是给「我删了一条记过的记录」留的 30 天退路；这里要撤的是
+        // 「它根本不该存在」，塞进回收站只会让 27 屏多一条「📷 1、没标题」的残骸。
+        guard let draft = fresh else {
+            ToastCenter.shared.show(msg)
+            return
+        }
+        // 把 context 单独取出来再进闭包：闭包会被 `ToastCenter` 这个单例拿着，
+        // 活得比这一屏久 —— 直接写 `ctx` 等于让闭包持有整个 EditorView。
+        let store = ctx
+        ToastCenter.shared.show(msg, actionTitle: "撤销") {
+            HerInfoStore.discardDraft(draft, in: store)
+        }
     }
 
     /// 提醒开关落到真实的 `Reminder` 上。

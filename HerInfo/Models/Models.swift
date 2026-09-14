@@ -919,6 +919,48 @@ enum HerInfoStore {
         if removed > 0 { try? ctx.save() }
         return removed
     }
+
+    // MARK: 撤销「刚记下的那一条」
+
+    /// 把「刚建出来、又被撤销掉」的那条记录**真删掉**。
+    ///
+    /// **它跟 `moveToTrash` 不是一件事，别混。**
+    ///   · `moveToTrash` 撤的是「我删掉了一条记过的记录」—— 有内容、有价值，
+    ///     所以要留 30 天的退路；
+    ///   · 这里撤的是「它根本不该存在」—— 用户手一滑点中「完成」，
+    ///     立刻又按了撤销。把它塞进回收站是错的：27 屏会因此多出一条
+    ///     「📷 1、没标题」的残骸，而用户以为自己撤销之后什么都没留下。
+    ///
+    /// 所以这里删干净：版本行、记录本身（图片行与提醒行由 `Record` 上的
+    /// 级联删除带走，不重复删）。
+    ///
+    /// **图片文件不在这里删** —— 沿用这个 App 一贯的分工：文件只由
+    /// `PhotoStore.purgeOrphans` 在下次启动时按「引用全集」统一清。
+    /// 好处之一是撤销之后立刻重选同一张图，hash 不变、文件还在，直接复用。
+    ///
+    /// 提醒必须先撤通知：提醒行会被级联删掉，但**系统里已经排好的那条通知
+    /// 不会自己消失** —— 不撤的话，用户撤销掉的记录照样会在晚上响一次，
+    /// 而他再也找不到它、不知道该去关什么。
+    @MainActor
+    static func discardDraft(_ record: Record, in ctx: ModelContext) {
+        // 先把 id 取出来。删完再碰这个模型对象，就可能触到失效对象（见 `cancel(reminderID:)`）。
+        let reminderID = record.reminder?.isOn == true ? record.reminder?.id : nil
+        if let rid = reminderID {
+            Task { await ReminderService.shared.cancel(reminderID: rid) }
+        }
+
+        // 版本行得按 id 自己捞：`Revision` 不是关系属性，它只存了一个 `recordID`。
+        // 新建那一次 `save(bump: true)` 已经插了一条，不删就会在 07 屏留下一行
+        // 指向一条不存在的记录的孤魂。
+        let key = record.id
+        let d = FetchDescriptor<Revision>(predicate: #Predicate { $0.recordID == key })
+        if let revs = try? ctx.fetch(d) {
+            for v in revs { ctx.delete(v) }
+        }
+
+        ctx.delete(record)
+        try? ctx.save()
+    }
 }
 
 extension Record {

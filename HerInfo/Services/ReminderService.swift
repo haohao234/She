@@ -173,9 +173,22 @@ final class ReminderService: NSObject {
     /// 只按原 id 撤是不够的 —— 那样「关掉提醒之后它还响一次」，
     /// 而这类 bug 极难复现（要先点过推迟、再关开关、还要等到点）。
     func cancel(_ reminder: Reminder) async {
-        center.removePendingNotificationRequests(withIdentifiers: [reminder.id])
+        await cancel(reminderID: reminder.id)
+    }
 
-        let prefix = "snooze_\(reminder.id)_"
+    /// 按 id 撤。**给「先把模型删掉、再撤通知」那条路用。**
+    ///
+    /// 撤销一条刚记下的记录时，提醒行走 `Record` 上的级联删除一起没了 ——
+    /// 那个模型对象随即失效，再去读它的任何属性都可能触到失效对象。
+    /// 这个坑本项目踩过一次（往已登记删除的 `Photo` 上写 `order` 会让
+    /// SwiftData 直接 `fatalError`），所以那条路必须在删除**之前**把 id 取出来。
+    ///
+    /// 撤的仍是同一批东西（原 id + `snooze_` 前缀的副本 + 地理围栏），
+    /// 不因为改成按 id 就少撤一样 —— 少撤一样就是「关掉的提醒还会响一次」。
+    func cancel(reminderID: String) async {
+        center.removePendingNotificationRequests(withIdentifiers: [reminderID])
+
+        let prefix = "snooze_\(reminderID)_"
         let copies = await center.pendingNotificationRequests()
             .map(\.identifier)
             .filter { $0.hasPrefix(prefix) }
@@ -183,7 +196,7 @@ final class ReminderService: NSObject {
             center.removePendingNotificationRequests(withIdentifiers: copies)
         }
 
-        if let region = location.monitoredRegions.first(where: { $0.identifier == reminder.id }) {
+        if let region = location.monitoredRegions.first(where: { $0.identifier == reminderID }) {
             location.stopMonitoring(for: region)
         }
     }
