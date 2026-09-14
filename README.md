@@ -439,17 +439,27 @@ Xcode 只跑在 macOS 上，交叉编译到 iOS 也不合法。
 
 所以分两层说清楚：
 
-**已经做过的（静态层）** —— 八份校验脚本，全部通过：
+**已经做过的（静态层）** —— **十份校验脚本**（九份静态 + 一份会开真浏览器），全部通过：
 
 | 脚本 | 管什么 |
 |---|---|
 | `check-swift.js` | 括号配平、类型引用闭合、Route 与导航对齐、关键常量落地（27 项） |
-| `check-argorder.py` | 逐成员 `init` 的**标签顺序**必须与属性声明顺序一致（49 个类型 / 83 处调用） |
-| `check-project.py` | `project.yml` 路径自洽、两份 plist 合法、**跨文件契约一致性**（分类 id / App Group） |
+| `check-argorder.py` | 逐成员 `init` 的**标签顺序**必须与属性声明顺序一致（49 个类型 / 83 处调用，0 问题） |
+| `check-project.py` | `project.yml` 路径自洽、两份 plist 合法、**跨文件契约一致性**（分类 id / App Group）（75 项） |
 | `check-guide.py` | 操作指引与推送脚本自洽：路径存在、`.bat` 是 CRLF + **GBK 字节**、标签无悬空（68 项） |
 | `check-symbols.py` | **找不到符号**：裸函数调用与 `C/CYC/Typo/S/R/Shadow` 成员逐个对回定义处 |
-| `check-handoff.js` | 交接文档 12 章齐全、41 屏逐条、验收清单 |
+| `check-handoff.js` | 交接文档 12 章齐全、41 屏逐条、验收清单（9 项） |
 | `check-prototype.js` / `check-spec.js` | 设计侧两份 HTML 交付物 |
+| **`check-globalsel.js`** | 单文件原型里「**全局选择器跨了多个屏**」：裸选择器 + `querySelector` 取单个 + 跨多屏 = FAIL（取全部 / 带值限定 / 带 `.on` 这类状态类 = INFO，逐条人工确认） |
+| **`check-imgrow-live.py`** | **唯一会开真浏览器的**：往原型注入探针 → 无头 Edge `--dump-dom` → 断言**屏内交互**（5 项）。补的正是 `check-prototype.js` 查不到的洞 |
+
+> 后两份是 2026-09-14 补的，起因值得记一笔：把 03/21/34 做成同一张字段表之后，
+> 三个屏都出现了 `.imgrow`，于是「全局 `document.querySelector('.imgrow')` 永远命中第一屏」
+> 这个坑**在文件里一共埋了三处**（主点击处理器、`runDemo()` 第 27 步、「重置」按钮）。
+> 我第一遍只改了主处理器 —— **`check-globalsel.js` 就是用来一次找全的，它现在报 FAIL 0 项**
+> （全文件只有 `.imgrow` 一个类跨屏，已全部堵死）；
+> **`check-imgrow-live.py` 用来证明改对了** —— 这类 bug 只在运行时暴露，
+> 静态脚本会一直绿，**绿的是旧结论，不是新代码**。
 
 > `check-symbols.py` 是最后补上的那份，因为一个「函数名漏写」的错误
 > **一路漏到了云端**：本机没有 Swift 工具链（`swiftc` 不在 PATH、没有 Xcode），
