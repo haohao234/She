@@ -696,10 +696,16 @@ warning 总数：11</pre>
         <span class="ic">▸</span>
         <div>
           <b>先认包，再拖进去（这一步能省掉一整轮排查）。</b>
-          对的包：文件名是 <code>HerInfo-&lt;提交号&gt;-unsigned.ipa</code>，体积<b>1 MB 出头</b>。
-          <br>→ <b>2 MB 左右的那个是修复前的旧包，直接别用</b> —— 它装不上，报错原文见下面
+          对的包：文件名是 <code>HerInfo-&lt;提交号&gt;-unsigned.ipa</code>。
+          <b>认包的判据只有一个 —— 提交号</b>，它必须跟最新那次 run 一致。
+          <br>→ <b>不要用体积认包</b>（2026-09-15 改）。原文写的是「1 MB 出头是对的 / 2 MB 是旧包」，
+          而那个「对」的包一直在长：修这一版时它已经是 <b>约 1.7 MB</b>，
+          而当初那个装不上的旧包正好是 2.0 MB —— 两个数已经要撞上了。
+          <b>体积会随每一轮代码变化，它不是判据，最多算个「明显不对」的提示。</b>
+          <br>→ 那个 2.0 MB 的旧包（<span class="mono">HerInfo-4794fed-unsigned.ipa</span>）
+          缺三份 <span class="mono">CFBundleVersion</span>，装不上，报错原文见下面
           「万一失败」里那条 <span class="mono">app extension placeholder</span>。
-          <br>→ 文件名里的提交号要跟<b>最新那次 run</b> 对得上，所以一定点<b>页面最上面（最新）</b>那次运行，
+          <br>→ 所以一定点<b>页面最上面（最新）</b>那次运行下载，
           别用浏览器里留着的旧下载。
           <br>→ <b>拖之前先看一眼 Sideloadly 第一行日志</b>：它会原样打印出你拖的是哪个文件
           （<span class="mono">Using IPA file: …</span>）。这一行是「我到底装的是哪个包」的唯一确证 ——
@@ -808,7 +814,8 @@ warning 总数：11</pre>
           而 <b>主 App 的 placeholder 允许缺、扩展的不允许</b> —— 所以报错点落在
           <code>HerInfoShare.appex</code> 上，而不是主 App。三个 bundle 都带病，先被拦下的是扩展。
           <br>→ <b>换个包就好，不用改任何设置、也不用重装 iTunes。</b>
-          怎么认包：见上面第 3 步那张「先认包」—— 约 <b>2 MB</b> 的是旧的，<b>1 MB 出头</b>的是现在这个。
+          怎么认包：见上面第 3 步那张「先认包」—— <b>只看文件名里的提交号</b>，
+          不看体积（体积会随代码变，2026-09-15 时对的包已约 1.7 MB）。
           <br>→ <b>怎么确证自己拖错了</b>：看 Sideloadly 第一行
           <span class="mono">Using IPA file: …\HerInfo-<b>4794fed</b>-unsigned.ipa</span> ——
           <code>4794fed</code> 这个提交号就是修复前的那一版，和它一起出现的一定是本条报错。
@@ -907,8 +914,9 @@ warning 总数：11</pre>
     <p>
       建一个空仓库（<b>三个勾都别勾</b>）→ 在 <span class="mono">她的信息本-iOS</span> 目录里
       <b>git remote add</b> 再 <b>git push</b> → 等 Actions 跑完 →
-      <b>点最上面那次运行</b>下 <span class="mono">HerInfo-ipa</span>（解开 zip，里面的 .ipa 约 <b>1.15 MB</b>）→
-      拖进 Sideloadly（<b>装之前瞄一眼第一行 <span class="mono">Using IPA file:</span></b>）。
+      <b>点最上面那次运行</b>下 <span class="mono">HerInfo-ipa</span>（解开 zip，里面的 .ipa）→
+      拖进 Sideloadly（<b>装之前瞄一眼第一行 <span class="mono">Using IPA file:</span></b>
+      —— 文件名里的<b>提交号</b>才是「装的是哪个包」的判据）。
     </p>
     <p style="margin-bottom:0">卡在任何一步，把屏幕上的字贴给我就行。</p>
   </div>
