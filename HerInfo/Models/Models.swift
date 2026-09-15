@@ -967,16 +967,6 @@ enum HerInfoStore {
         try? ctx.save()
     }
 
-    /// 回收站的 30 天到期清理，返回真正删掉的条数。
-    ///
-    /// **这是在兑现 27 屏印在屏幕上的那句话**：「30 天后自动清掉，清掉就找不回来了」。
-    /// 少了这一步，那句话就是假的，而且回收站会一直长大 ——
-    /// 一个永不清理的回收站，在用户眼里等于「你其实没删掉任何东西」。
-    ///
-    /// 必须在 `PhotoStore.purgeOrphans` **之前**跑：先让记录真的消失，
-    /// 它引用的图片才会在同一次启动里被扫成孤儿一起清掉。
-    @MainActor
-    @discardableResult
     // MARK: - 老库的配图搬进标量（一次性）
 
     /// 「配图搬家」这件事做过了没有。见下面的 `backfillPhotoHashes`。
@@ -1038,6 +1028,16 @@ enum HerInfoStore {
         return filled
     }
 
+    /// 回收站的 30 天到期清理，返回真正删掉的条数。
+    ///
+    /// **这是在兑现 27 屏印在屏幕上的那句话**：「30 天后自动清掉，清掉就找不回来了」。
+    /// 少了这一步，那句话就是假的，而且回收站会一直长大 ——
+    /// 一个永不清理的回收站，在用户眼里等于「你其实没删掉任何东西」。
+    ///
+    /// 必须在 `PhotoStore.purgeOrphans` **之前**跑：先让记录真的消失，
+    /// 它引用的图片才会在同一次启动里被扫成孤儿一起清掉。
+    @MainActor
+    @discardableResult
     static func cleanupExpiredTrash(in ctx: ModelContext) -> Int {
         let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
         let d = FetchDescriptor<Record>(predicate: #Predicate { $0.deletedAt != nil })
