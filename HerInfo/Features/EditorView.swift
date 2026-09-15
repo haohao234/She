@@ -209,7 +209,16 @@ struct RecordEditorView: View {
                     // 一条「她说想要这个」配上照片，半年后还认得出是哪一款；纯文字不能。
                     FieldBlock(label: "图片",
                                caption: photoHashes.isEmpty ? nil : "\(photoHashes.count)/\(Photo.maxPerRecord)") {
-                        PhotoGrid(hashes: $photoHashes, onAdd: { pickingPhotos = true })
+                        // 34 屏画布上那句「点两张照片 → 原型保留静态
+                        // （真实设备上是全屏预览）」由 `onOpen` 兑现。
+                        // 编辑态同样给 —— 加完图最该做的事就是**看一眼那张图对不对**，
+                        // 而要在这之前先退出去才能看，等于逼用户走两遍。
+                        //
+                        // 参数顺序照 `PhotoGrid` 存储属性的声明顺序写
+                        // （`onOpen` 在 `onAdd` 之前），见 `check-argorder.py`。
+                        PhotoGrid(hashes: $photoHashes,
+                                  onOpen: { PhotoViewerCenter.shared.open(photoHashes, at: $0) },
+                                  onAdd: { pickingPhotos = true })
                         Text("长按可以拖动排序 · 最多 \(Photo.maxPerRecord) 张")
                             .font(Typo.caption)
                             .foregroundStyle(C.ink3)

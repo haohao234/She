@@ -412,7 +412,15 @@ struct RecordDetailView: View {
                             // 一条「她说想要这个」配上照片，半年后还认得出是哪一款；
                             // 纯文字不能。详情页是只读的，所以不给删除角标、也不给添加格。
                             if !photoHashes.isEmpty {
-                                PhotoGrid(hashes: .constant(photoHashes), editable: false)
+                                // 「点开看大图」就落在这里。详情页是只读的，
+                                // 所以翻图是这块唯一的操作 —— 编辑那条路在右上角。
+                                //
+                                // 注意参数顺序：`onOpen` 在 `editable` 之前
+                                // （= `PhotoGrid` 存储属性的声明顺序，
+                                // 见 `.workbuddy/checks/check-argorder.py`）。
+                                PhotoGrid(hashes: .constant(photoHashes),
+                                          onOpen: { PhotoViewerCenter.shared.open(photoHashes, at: $0) },
+                                          editable: false)
                             }
 
                             Text(r.body)

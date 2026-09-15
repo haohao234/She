@@ -501,6 +501,13 @@ struct PhotoGrid: View {
     @Binding var hashes: [String]
     var maxCount: Int = Photo.maxPerRecord
 
+    /// 点开了第几张（0 起）。上层在这里调起全屏预览（`PhotoViewerCenter`）。
+    ///
+    /// **传下标而不是 hash** —— 预览页要能左右翻同一屏里的其他图，
+    /// 而「从第几张开始」这件事只有位置表达得出来：同一个 hash 可能同时
+    /// 存在于另一条记录的格子里，光凭它定位不到「这一屏的第几个」。
+    var onOpen: ((Int) -> Void)?
+
     /// 「＋」被点。上层在这里打开 PhotosPicker。
     var onAdd: () -> Void = {}
 
@@ -514,14 +521,20 @@ struct PhotoGrid: View {
 
     /// 显式 init 的理由见 `SegmentControl`（private let 会让
     /// 逐成员初始化器降级成 private）。
+    ///
+    /// **参数顺序 = 存储属性的声明顺序**（`onOpen` 在 `onAdd` 之前）——
+    /// 调用处必须照这个顺序写，否则报 "argument must precede argument"。
+    /// 这条规矩有专门一道校验（`.workbuddy/checks/check-argorder.py`）。
     init(hashes: Binding<[String]>,
          maxCount: Int = Photo.maxPerRecord,
-         editable: Bool = true,
-         onAdd: @escaping () -> Void = {}) {
+         onOpen: ((Int) -> Void)? = nil,
+         onAdd: @escaping () -> Void = {},
+         editable: Bool = true) {
         self._hashes = hashes
         self.maxCount = maxCount
-        self.editable = editable
+        self.onOpen = onOpen
         self.onAdd = onAdd
+        self.editable = editable
     }
 
     private var columns: [GridItem] {
@@ -545,6 +558,23 @@ struct PhotoGrid: View {
                     .onDrop(of: [.text], delegate: PhotoDropDelegate(item: hash,
                                                                      hashes: $hashes,
                                                                      dragging: $dragging))
+                    // 点开看大图（见 `PhotoViewer`）。
+                    //
+                    // 为什么必须有：格子是 `scaledToFill` —— **裁过的**。
+                    // 竖拍的照片在格子里只看得到中间一条，「图片是一等公民」
+                    // 这句话就落不了地：能看见「这里有张图」，看不到那张图本身。
+                    //
+                    // 和上面那条 `.onDrag` 不打架：拖要**按住不放**，
+                    // 点是一按就抬。两条手势的判定条件本来就不重叠，
+                    // 所以「长按拖动排序」和「点开预览」可以同时成立。
+                    //
+                    // 写在 `.onDrag` / `.onDrop` **之后**（更靠外层）：手指
+                    // 一按就抬时由它接住，一旦移动超过容差它就自己让位给拖动。
+                    .onTapGesture {
+                        guard let onOpen,
+                              let i = hashes.firstIndex(of: hash) else { return }
+                        onOpen(i)
+                    }
             }
 
             if editable && hashes.count < maxCount {
