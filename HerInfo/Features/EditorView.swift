@@ -581,25 +581,55 @@ struct RecordEditorView: View {
         }
         lastSnapshot = snapshot
 
-        // 图片：按数组顺序重排 order，删掉已经不在数组里的
+        // 配图同步：按数组顺序重排 order，删掉已经不在数组里的。
+        //
+        // **这一段有两条铁律，都是两份真机崩溃日志换来的（2026-09-15 的 10:25 与 11:10）。**
+        // 那两份日志的栈**都停在 SwiftData 的 `PersistentModel.getValue(forKey:)`**，
+        // 也就是「读一个 `Photo` 的属性就崩」，而且两次的 SwiftData 内部三帧偏移
+        // 一模一样 —— 说明崩的是同一个动作，跟调用方是自动保存还是手动保存无关。
+        //
+        // 崩的那个 `Photo` 是**墓碑对象**（tombstone）：它的行已经从库里没了，
+        // 却还挂在 `target.photos` 里。它是这么来的 ——
+        //   `ctx.delete(p)` 只把 p **登记**删除，**并没有把 p 从关系上摘掉**；
+        //   于是下一次再 materialize `target.photos`，SwiftData 交回来的就是那个
+        //   行已不存在的墓碑。对墓碑读**任何**属性都会走进 SwiftData 内部的
+        //   fatalError（EXC_BREAKPOINT，`brk #1`）。
+        //
+        // **它没法用 `isDeleted` 防住 —— 这一点上一版判断错了，白改了一次。**
+        // `p.isDeleted` 对墓碑返回 **false**（它不是「本次登记删除」，
+        // 而是「库里已经没有它」），所以「先判 isDeleted 再读 hash」那套顺序写法
+        // 在这里根本不会触发。上一版加的正是 `!$0.isDeleted && $0.hash == h`，
+        // 这次真机照样崩在同一句。
+        //
+        // 所以改成：
+        //   ① 关系**只读一次**，读成 `existing` 之后一次都不再回头读 `target.photos`；
+        //   ② 删之前**先从关系上摘掉**（`p.record = nil`），
+        //      关系表里因此不会留下指向已删行的悬空项 —— 这是根上的修法。
+        let existing = Array(target.photos)
         let keep = Set(photoHashes)
-        for p in target.photos where !keep.contains(p.hash) {
+
+        // 同一个 hash 在关系里出现两次是可能的：「恢复历史版本」那条路是照
+        // `Revision.photoHashes` 整份重放的（见 `Photo.uniqueHashes` 的说明）。
+        // 只留第一条，其余按「多余」一起删掉 —— 顺手把那个已知问题在这里收口。
+        var byHash: [String: Photo] = [:]
+        var extra: [Photo] = []
+        for p in existing {
+            if byHash[p.hash] == nil { byHash[p.hash] = p } else { extra.append(p) }
+        }
+
+        // 删：不在 keep 里的，以及重复的。**`p.record = nil` 必须写在 `ctx.delete` 前面。**
+        for p in existing where !keep.contains(p.hash) {
+            p.record = nil
             ctx.delete(p)
         }
+        for p in extra {
+            p.record = nil
+            ctx.delete(p)
+        }
+
+        // 重排 + 补插。这里只碰 `byHash`（从 `existing` 里挑出来的活对象）。
         for (idx, h) in photoHashes.enumerated() {
-            // `!p.isDeleted` 那一句不能省。
-            // `ctx.delete(p)` 只是**登记**删除，`target.photos` 要到下一次 save
-            // 之后才会真的少掉这一条 —— 于是这个 `first(where:)` 有可能捞回一个
-            // 刚刚在上一个循环里被登记删除的对象。往它身上写 `order`，
-            // SwiftData 会直接 fatalError（"model instance was invalidated…"），
-            // 表现就是「删掉一张图再保存 → 闪退」。
-            // 判成「没找到」之后会走下面的 else 插一条新的，行为也是对的。
-            //
-            // **`!p.isDeleted` 必须写在 `p.hash` 前面，顺序不能换。**
-            // `&&` 从左往右算，而被登记删除的对象它的 backings 已经没了 ——
-            // 先读 `hash` 就是先撞上去，那道守卫等于没写。
-            // 这里栽过一次：上一版写的是 `$0.hash == h && !$0.isDeleted`。
-            if let p = target.photos.first(where: { !$0.isDeleted && $0.hash == h }) {
+            if let p = byHash[h] {
                 p.order = idx
             } else {
                 let p = Photo(hash: h, order: idx)

@@ -662,6 +662,42 @@ enum HerInfoStore {
         )
     }
 
+    /// 容器打不开时的最后一道：**把现有库文件整份挪到一边，再新建一份空的**。
+    ///
+    /// 原来 `HerInfoApp` 在 `container()` 抛错时直接 `fatalError` —— 想法是对的
+    /// （不要静默退回内存库，那会让用户以为数据存下来了），但代价是**永久打不开**：
+    /// 用户每次点图标都在同一个地方崩，连「是不是该重装」都无从判断。
+    ///
+    /// 挪走而不是删掉：`default.store` 连同 `-shm` / `-wal` 整份搬到
+    /// `Application Support/broken-<时间戳>/`，数据还在盘上（重装之前拿得回来），
+    /// App 当场能用；而且这件事**会如实告诉他**（见 `storeResetKey`），
+    /// 不是静默换一个空库。
+    ///
+    /// 返回 nil = 连新建都失败（磁盘满 / 沙盒异常）—— 那种情况崩是诚实的。
+    @MainActor
+    static func containerAfterSettingAsideBrokenStore() -> ModelContainer? {
+        let fm = FileManager.default
+        guard let support = fm.urls(for: .applicationSupportDirectory,
+                                    in: .userDomainMask).first else { return nil }
+
+        let stamp = ISO8601DateFormatter().string(from: .now)
+            .replacingOccurrences(of: ":", with: "-")
+        let aside = support.appendingPathComponent("broken-\(stamp)", isDirectory: true)
+        try? fm.createDirectory(at: aside, withIntermediateDirectories: true)
+
+        // SwiftData 的默认库是这三个文件一组，**必须一起搬** ——
+        // 只搬 .store 而留下 -wal，新库会读到旧的未提交事务。
+        for suffix in ["default.store", "default.store-shm", "default.store-wal"] {
+            let src = support.appendingPathComponent(suffix)
+            guard fm.fileExists(atPath: src.path) else { continue }
+            try? fm.moveItem(at: src, to: aside.appendingPathComponent(suffix))
+        }
+
+        guard let fresh = try? container() else { return nil }
+        UserDefaults.standard.set(stamp, forKey: storeResetKey)
+        return fresh
+    }
+
     /// 预览用这个（内存，不污染真机数据）。
     @MainActor
     static func previewContainer() throws -> ModelContainer {
@@ -717,6 +753,86 @@ enum HerInfoStore {
         ctx.insert(m)
 
         try? ctx.save()
+    }
+
+    // MARK: - 关系表自愈（一次性）
+
+    /// 「关系表自愈已经做过」/「试过但没做完」两个标记。
+    ///
+    /// **先落 `attempted` 再动手，这个顺序是有意的** —— 见 `repairPhotoLinks`。
+    static let photoRepairAttemptedKey = "hi.repair.photoLinks.attempted.v1"
+    static let photoRepairDoneKey      = "hi.repair.photoLinks.done.v1"
+
+    /// 「数据库打不开、已经挪到一边并新建了一份」的时间戳。
+    /// 由 `HerInfoApp` 在兜底成功时写入，启动时读它给用户一句实话。
+    static let storeResetKey = "hi.store.setAsideAt"
+
+    /// 关系表还能不能信。
+    ///
+    /// `false` 只有一种情形：**上一次自愈动到一半就崩了**。
+    /// 那时后面所有碰 `record.photos` 的启动步骤都要跳过 ——
+    /// 让 App 能开起来，比把提醒重排、把孤儿文件清掉重要得多。
+    @MainActor
+    static var photoLinksTrustworthy: Bool {
+        let d = UserDefaults.standard
+        return d.bool(forKey: photoRepairDoneKey) || !d.bool(forKey: photoRepairAttemptedKey)
+    }
+
+    /// 一次性自愈：把每条记录的 `photos` 关系按「活着的 `Photo` 行」整份重写。
+    ///
+    /// **它修的是什么。** 2026-09-15 两份真机崩溃日志（10:25 与 11:10）的栈
+    /// **都停在 SwiftData 的 `PersistentModel.getValue(forKey:)`** —— 读一个 `Photo`
+    /// 的属性就崩，两次的 SwiftData 内部三帧偏移完全一致。那个 `Photo` 是
+    /// **墓碑对象**：行已经不在库里，却还挂在 `Record.photos` 里。
+    ///
+    /// 它由「只 `ctx.delete(p)`、不先从关系上摘掉」这种写法留下（两处源头已修：
+    /// `RecordEditorView.save` 与 `VersionHistoryView.restore`）。而它一旦留在关系里，
+    /// 后果是**成对出现**的：
+    ///   · 编辑那条记录 → 保存时读 `Photo.hash` → 崩；
+    ///   · **下一次启动** → `bootstrap` 里两处会读 `record.photos` → 还是崩。
+    ///     用户看到的就是「导入图片崩了，然后连 APP 都打不开了」。
+    /// 第二次那个后果是这次必须加自愈的原因：不清掉它，App 永远开不起来。
+    ///
+    /// **为什么从 `Photo` 那一侧重建。** `Photo` 行是从库里 `fetch` 出来的**活行**，
+    /// 读它的 `hash` 永远安全；`p.record` 指向的 `Record` 也一定在（上面刚 fetch 过全集）。
+    /// 而 `r.photos` 那一边正是会交出墓碑的方向 —— 所以不能从那边数。
+    /// 把算好的数组赋回去 = 整份重写关系表，悬空项被冲掉。
+    ///
+    /// **两个标记的顺序是这个函数最要紧的一行。** 先把 `attempted` 落盘再动手：
+    /// 万一 `r.photos = want` 这一句本身也崩（赋值理论上只碰标识符、不该 materialize
+    /// 旧对象，但这一条没有真机证据），下次启动就会看到「试过、没做完」→ 跳过它。
+    /// 否则就成了「每次启动都崩」的死循环，那比不修还糟。
+    ///
+    /// 返回 true = 这次真的重写了。
+    @MainActor
+    @discardableResult
+    static func repairPhotoLinks(in ctx: ModelContext) -> Bool {
+        let d = UserDefaults.standard
+        if d.bool(forKey: photoRepairDoneKey) { return false }        // 做过了
+        if d.bool(forKey: photoRepairAttemptedKey) { return false }   // 上次没做完，不再试
+
+        d.set(true, forKey: photoRepairAttemptedKey)                  // ← 必须在动手之前
+
+        let records = (try? ctx.fetch(FetchDescriptor<Record>())) ?? []
+        guard !records.isEmpty else {
+            d.set(true, forKey: photoRepairDoneKey)
+            return false
+        }
+        let photos = (try? ctx.fetch(FetchDescriptor<Photo>())) ?? []
+
+        // **只从 Photo 这一侧读挂靠关系。** 从 Record 那一侧读会 materialize 出墓碑。
+        var byRecord: [String: [Photo]] = [:]
+        for p in photos {
+            guard let rid = p.record?.id else { continue }
+            byRecord[rid, default: []].append(p)
+        }
+
+        for r in records {
+            r.photos = (byRecord[r.id] ?? []).sorted { $0.order < $1.order }
+        }
+        try? ctx.save()
+        d.set(true, forKey: photoRepairDoneKey)
+        return true
     }
 
     // MARK: - 来自锁屏通知的两件事

@@ -95,16 +95,21 @@ final class ReminderService: NSObject {
 
     // MARK: - 排程
 
-    func schedule(_ reminder: Reminder) async {
+    /// - Parameter photoIndex: 「记录 id → 配图 hash（已按 order 排好）」的索引。
+    ///   批量重排时由 `rescheduleAll` 建一次、所有提醒共用；单条排程传 nil，
+    ///   函数自己按 `reminder.modelContext` 现建一份。
+    ///   **索引存在的唯一理由是：不要去读 `record.photos` 那个关系**（见 `photoIndex(from:)`）。
+    func schedule(_ reminder: Reminder, photoIndex: [String: [String]]? = nil) async {
         guard reminder.isOn else { return }
 
         switch reminder.kind {
-        case .date: await scheduleDate(reminder)
+        case .date: await scheduleDate(reminder, photoIndex: photoIndex)
         case .geo:  scheduleGeo(reminder)
         }
     }
 
-    private func scheduleDate(_ r: Reminder) async {
+    private func scheduleDate(_ r: Reminder, photoIndex: [String: [String]]?) async {
+        let index = photoIndex ?? Self.photoIndex(from: r.modelContext)
         let content = UNMutableNotificationContent()
         content.title = r.title
         content.body = r.previewLine        // 与 32 屏「通知预览」逐字一致
@@ -112,8 +117,8 @@ final class ReminderService: NSObject {
         // 分类决定「长按展开后有没有按钮、走不走扩展」——
         // 它就是主 App 与通知扩展之间那根唯一的线。
         content.categoryIdentifier = HINotify.reminderCategory
-        content.userInfo = Self.userInfo(for: r)
-        attachFirstPhoto(of: r, to: content)
+        content.userInfo = Self.userInfo(for: r, photoIndex: index)
+        attachFirstPhoto(of: r, photoIndex: index, to: content)
 
         var comps = Calendar.current.dateComponents([.hour, .minute], from: r.time)
 
@@ -203,25 +208,59 @@ final class ReminderService: NSObject {
 
     /// 启动时重排一次。**必须做** ——
     /// 卸载重装、重启、系统清理都会丢掉待发通知，而用户以为提醒还在。
+    ///
+    /// 配图索引在这里建一次、所有提醒共用 —— 每条提醒各建一次就是 N 次全表扫描。
+    /// 上下文从记录自己身上取（启动那一步的调用方拿不到 `ModelContext`）。
     func rescheduleAll(_ records: [Record]) {
+        let index = Self.photoIndex(from: records.lazy.compactMap(\.modelContext).first)
         for r in records.compactMap(\.reminder) where r.isOn {
-            Task { await schedule(r) }
+            Task { await schedule(r, photoIndex: index) }
         }
     }
 
     // MARK: - 通知里带什么
 
+    /// 「记录 id → 它配图的 hash（按 `order` 排好）」。
+    ///
+    /// **从 `Photo` 表数，绝不走 `record.photos` 关系。**
+    /// 关系里可能挂着墓碑对象（行已不在库里、却还在数组里，见
+    /// `HerInfoStore.repairPhotoLinks`），读它的任何属性都会在 SwiftData 内部 `fatalError`。
+    /// 而这一步跑在**启动重排**里（`rescheduleAll` 的 Task 会走到这里），
+    /// 崩了就不是「某条提醒没排上」，是 **App 打不开**。
+    ///
+    /// 从 `Photo` 那一侧数为什么安全：`p.record` 是指向 `Record` 的 to-one，
+    /// 而 `Record` 一定是活行（启动那一步刚整体 fetch 过），读它永远不触墓碑。
+    /// `p.hash` 本来就存在 `Photo` 行上，所以两边集合完全等价。
+    ///
+    /// 拿不到上下文（记录已经被删）时返回空表 —— 通知少一块配图信息，
+    /// 但一条没配图的提醒仍然是一条完整的提醒。
+    private static func photoIndex(from ctx: ModelContext?) -> [String: [String]] {
+        guard let ctx else { return [:] }
+        let photos = (try? ctx.fetch(FetchDescriptor<Photo>())) ?? []
+        var buckets: [String: [Photo]] = [:]
+        for p in photos {
+            guard let rid = p.record?.id else { continue }
+            buckets[rid, default: []].append(p)
+        }
+        return buckets.mapValues { $0.sorted { $0.order < $1.order }.map(\.hash) }
+    }
+
     /// 载荷。键名全部来自 `HINotify.Key` ——
     /// 扩展那一侧就是照这些键读的，写错一个的表现是「展开后少一块」。
-    private static func userInfo(for r: Reminder) -> [String: Any] {
+    ///
+    /// 配图张数走传进来的 `photoIndex`，**不再写 `r.record?.photos.count`**：
+    /// 那个关系里可能挂着墓碑，而这一句在启动重排时会被执行到（见 `photoIndex(from:)`）。
+    /// 其余几项（版本 / 分类 / recordID）读的都是 `Record` 自己的标量属性，不碰集合关系。
+    private static func userInfo(for r: Reminder, photoIndex: [String: [String]]) -> [String: Any] {
+        let recordID = r.record?.id
         var info: [String: Any] = [
             HINotify.Key.title:      r.title,
             HINotify.Key.body:       r.previewLine,
             HINotify.Key.reminderID: r.id,
             HINotify.Key.version:    r.record?.version ?? 1,
-            HINotify.Key.photoCount: r.record?.photos.count ?? 0
+            HINotify.Key.photoCount: recordID.flatMap { photoIndex[$0]?.count } ?? 0
         ]
-        if let rid = r.record?.id { info[HINotify.Key.recordID] = rid }
+        if let rid = recordID { info[HINotify.Key.recordID] = rid }
         // rawValue 与 HINotify.Cat 的 case 名一致（like / trait_ / care / hate）
         if let cat = r.record?.cat.rawValue { info[HINotify.Key.cat] = cat }
         return info
@@ -232,8 +271,11 @@ final class ReminderService: NSObject {
     /// 走 `UNNotificationAttachment`：**系统会把文件拷进这条通知自己的目录**，
     /// 所以扩展读得到，而我们不需要为图片开共享容器。
     /// 找不到文件就安静跳过 —— 一条没配图的提醒仍然是一条完整的提醒。
-    private func attachFirstPhoto(of r: Reminder, to content: UNMutableNotificationContent) {
-        guard let hash = r.record?.photos.sorted(by: { $0.order < $1.order }).first?.hash,
+    private func attachFirstPhoto(of r: Reminder,
+                                  photoIndex: [String: [String]],
+                                  to content: UNMutableNotificationContent) {
+        guard let rid = r.record?.id,
+              let hash = photoIndex[rid]?.first,
               let url = Self.photoURL(hash),
               let att = try? UNNotificationAttachment(identifier: "photo",
                                                       url: url,

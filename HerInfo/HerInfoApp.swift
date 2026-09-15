@@ -31,14 +31,24 @@ struct HerInfoApp: App {
     @UIApplicationDelegateAdaptor(QuickActionDelegate.self) private var quickActions
 
     /// 一个容器，全 App 共用。
-    /// 建失败时**不要静默退回内存库** —— 那会让用户以为数据存下来了，
-    /// 重启后发现全没了。宁可崩在一个说得清的地方。
+    ///
+    /// **建失败时不再直接 `fatalError`。**
+    ///
+    /// 原来这里只有一句 `fatalError("数据容器创建失败")`，想法是对的 ——
+    /// 不要静默退回内存库，那会让用户以为数据存下来了、重启后发现全没了。
+    /// 但代价在 2026-09-15 显出来了：**贵到离谱**。
+    /// 导入配图时一次保存中途被打断，库停在自相矛盾的状态上，
+    /// 此后每次点图标都在这一行崩 —— 用户看到的是「连 APP 都打不开了」，
+    /// 而且他没有任何办法区分「重装能好」还是「重装会丢数据」，只能干瞪眼。
+    ///
+    /// 现在分两级，只有第二级才崩：
+    ///   ① 先照常开；开不了 → ② 把整份库文件挪到一边、新建一份空的（数据还在盘上，
+    ///      见 `HerInfoStore.containerAfterSettingAsideBrokenStore`，而且**会如实告诉用户**）；
+    ///   ③ 连新建都失败（磁盘满 / 沙盒异常）→ 这时崩是诚实的，因为没别的可做了。
     private let container: ModelContainer = {
-        do {
-            return try HerInfoStore.container()
-        } catch {
-            fatalError("数据容器创建失败：\(error)")
-        }
+        if let ok = try? HerInfoStore.container() { return ok }
+        if let fresh = HerInfoStore.containerAfterSettingAsideBrokenStore() { return fresh }
+        fatalError("数据容器创建失败：磁盘或沙盒异常")
     }()
 
     var body: some Scene {
@@ -64,6 +74,21 @@ struct HerInfoApp: App {
     private func bootstrap() async {
         let ctx = container.mainContext
 
+        // ⓪ **先自愈关系表，必须排在最前面。**
+        //
+        // 库里可能留着「墓碑 `Photo`」：行已经不在库里了，却还挂在
+        // `Record.photos` 这个关系里。它是「只 `ctx.delete(p)`、不先把 `p.record`
+        // 摘掉」留下的，而它一旦留在关系里，后果是成对出现的：
+        //   · 编辑那条记录 → 保存时读 `Photo.hash` → 崩（用户报的那个闪退）；
+        //   · **下一次启动** → 启动流程里读 `record.photos` → 还是崩，
+        //     用户看到的就是第二句「连 APP 都打不开了」。
+        // 两个源头都已修（`RecordEditorView.save` / `VersionHistoryView.restore`），
+        // 这一步清的是历史遗留 —— 不清掉它，老用户升级上来照样打不开。
+        HerInfoStore.repairPhotoLinks(in: ctx)
+
+        // 库被挪走重建过 → **如实说一句**。不是静默换一个空库。
+        announceStoreResetIfAny()
+
         // **不再在首次启动写「示例数据」。**
         //
         // 这里以前会插入一个叫「小满」的档案 + 4 条记录 + 1 条提醒，
@@ -83,7 +108,15 @@ struct HerInfoApp: App {
         // 回收站 30 天到期清理。**必须在清孤儿图片之前** ——
         // 先让记录真的消失，它引用的图片才会在同一次启动里被扫成孤儿。
         // 这一步是在兑现 27 屏印在屏幕上的那句「30 天后自动清掉」。
-        HerInfoStore.cleanupExpiredTrash(in: ctx)
+        //
+        // **关系表不可信时跳过**（见 `HerInfoStore.photoLinksTrustworthy`）：
+        // 它是级联删除，会顺着 `Record.photos` 往下走。那种状态下宁可这一轮不清理
+        // （记录多留一次启动，无害），也不在一条来路不明的关系上做删除。
+        // 这个分支实际上很少走到：`false` 只在「自愈动到一半就崩了」时出现，
+        // 而那种崩溃会连带让库开不了 → 走容器兜底 → 换上来的是空库，压根没有关系表。
+        if HerInfoStore.photoLinksTrustworthy {
+            HerInfoStore.cleanupExpiredTrash(in: ctx)
+        }
 
         // 重排提醒
         let all = (try? ctx.fetch(FetchDescriptor<Record>())) ?? []
@@ -96,16 +129,37 @@ struct HerInfoApp: App {
         // 删记录 / 恢复历史版本），太容易漏一个；按「现有引用全集」扫一遍不会误删。
         //
         // 三处引用都要算上，**少算一处就会把还在用的图删掉**：
-        //   ① 记录自己的配图 ② 历史版本里存的图快照 ③ 头像
-        // 这里用的 `all` 是**不过滤删除状态的** —— 回收站里的记录还能恢复，
-        // 它的配图当然还得留着。
+        //   ① 配图行本身 ② 历史版本里存的图快照 ③ 头像
+        //
+        // ① 是**从 `Photo` 表取的**，不是从 `record.photos` 关系取的 ——
+        // 关系里可能挂着墓碑（同上），而这一步跑在启动流程里，崩了就是 App 打不开。
+        // 两边集合等价：`hash` 本来就在 `Photo` 行上。而且这里**不过滤记录是否在回收站**：
+        // 回收站里的记录还能恢复，它的配图当然还得留着。
         let revisions = (try? ctx.fetch(FetchDescriptor<Revision>())) ?? []
+        let photos = (try? ctx.fetch(FetchDescriptor<Photo>())) ?? []
         let avatar = (try? ctx.fetch(FetchDescriptor<Profile>()))?.first?.avatarHash
-        PhotoStore.purgeOrphans(keeping: PhotoStore.referencedHashes(records: all,
+        PhotoStore.purgeOrphans(keeping: PhotoStore.referencedHashes(photos: photos,
                                                                      revisions: revisions,
                                                                      avatar: avatar))
 
         drainInbox()
+    }
+
+    /// 「库打不开、已经把它挪到一边、现在用的是一份新的」——
+    /// 这件事必须让用户知道。
+    ///
+    /// 否则他看到的是「我的记录全没了」，而 App 一声不吭 —— 那比崩还让人难受：
+    /// 崩了他知道出事了，静默清空他会以为自己记错了、或者怪到手机上。
+    ///
+    /// 只说一次（说完清标记）。**盘上的 `broken-<时间戳>/` 目录一个字节都不动** ——
+    /// 数据还在设备上，真要找回有据可查，所以文案里要把这一点说出来，
+    /// 而不是只说一句「已重置」。这两个字（未删）才是用户真正的定心丸。
+    @MainActor
+    private func announceStoreResetIfAny() {
+        let d = UserDefaults.standard
+        guard d.string(forKey: HerInfoStore.storeResetKey) != nil else { return }
+        d.removeObject(forKey: HerInfoStore.storeResetKey)
+        ToastCenter.shared.show("数据库曾打不开，已移到一边并新建（旧数据未删）")
     }
 
     /// 把三个系统级入口记下的东西落成真正的数据。

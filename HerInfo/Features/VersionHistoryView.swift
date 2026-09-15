@@ -267,21 +267,35 @@ struct VersionHistoryView: View {
 
         // 配图跟着快照走。**只改 Photo 行，不碰文件** ——
         // 被移出的图可能还被更早的版本引用着，删文件是启动时孤儿清理的事。
+        // **与 34 屏 `RecordEditorView.save` 里那一段是同一段、同一条铁律**：
+        // 关系只读一次；删之前先把 `p.record = nil` 摘掉关系。
+        // 理由（墓碑对象为什么会崩、为什么 `isDeleted` 拦不住）写在那边，不重复。
+        //
+        // 这一段原来写的是 `$0.hash == h && !$0.isDeleted` —— 两个错叠在一起：
+        // `&&` 从左往右算，所以先读的正是会崩的那个 `hash`；而 `!isDeleted`
+        // 对真正危险的墓碑对象返回 false，那道守卫对它**根本不起作用**。
+        let existing = Array(r.photos)
         let keep = Set(v.photoHashes)
-        for p in r.photos where !keep.contains(p.hash) {
+        var byHash: [String: Photo] = [:]
+        var extra: [Photo] = []
+        for p in existing {
+            if byHash[p.hash] == nil { byHash[p.hash] = p } else { extra.append(p) }
+        }
+        for p in existing where !keep.contains(p.hash) {
+            p.record = nil
+            ctx.delete(p)
+        }
+        for p in extra {
+            p.record = nil
             ctx.delete(p)
         }
         for (idx, h) in v.photoHashes.enumerated() {
-            // `!p.isDeleted` 与 34 屏 `RecordEditorView.save` 里那一处是同一个理由：
-            // `ctx.delete(p)` 只是登记删除，上面的 `r.photos` 要到下一次 save
-            // 才会真的少掉这一条 —— 这个 `first(where:)` 可能捞回一个刚被登记
-            // 删除的对象，往它身上写 `order` 会让 SwiftData 直接 fatalError。
-            if let p = r.photos.first(where: { $0.hash == h && !$0.isDeleted }) {
+            if let p = byHash[h] {
                 p.order = idx
             } else {
                 let p = Photo(hash: h, order: idx)
-                p.record = r
                 ctx.insert(p)
+                p.record = r
             }
         }
 

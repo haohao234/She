@@ -265,12 +265,21 @@ enum PhotoStore {
     // MARK: - 引用集合与占用
 
     /// 数出「还被引用的 hash 全集」。
-    /// **三处都要算上**（记录 / 历史版本 / 头像）—— 少算一处就会把还在用的图删掉。
-    static func referencedHashes(records: [Record],
+    /// **三处都要算上**（记录配图 / 历史版本快照 / 头像）—— 少算一处就会把还在用的图删掉。
+    ///
+    /// **入参是 `[Photo]`（从库里 fetch 出来的活行），不是 `[Record]`。**
+    /// 原来是 `for r in records { for p in r.photos { … } }`，那会走进 `record.photos`
+    /// 关系 —— 而关系里可能挂着「墓碑对象」（行已不在库里、却还在数组里，
+    /// 见 `HerInfoStore.repairPhotoLinks`），一读 `p.hash` 就崩在 SwiftData 内部。
+    ///
+    /// 这一步跑在**启动流程**里，所以后果不是「某条记录打不开」，而是**App 打不开**。
+    /// 换成从 `Photo` 表数：`hash` 本来就存在 Photo 行上，两边集合完全等价，
+    /// 但这一边永远安全。
+    static func referencedHashes(photos: [Photo],
                                 revisions: [Revision],
                                 avatar: String?) -> Set<String> {
         var set = Set<String>()
-        for r in records { for p in r.photos { set.insert(p.hash) } }
+        for p in photos { set.insert(p.hash) }
         for v in revisions { for h in v.photoHashes { set.insert(h) } }
         if let a = avatar, !a.isEmpty { set.insert(a) }
         return set
