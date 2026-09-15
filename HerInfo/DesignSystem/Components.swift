@@ -83,23 +83,88 @@ struct NavRow<Trailing: View>: View {
 
 // MARK: - 胶囊
 
-enum PillStyle { case normal, selected, dashed }
+enum PillStyle {
+    /// 规范 `.pill` 的默认写法：**卡面白底 + 1px `--line2` 描边**。分类胶囊（02 屏顶那一排）用它。
+    /// 2026-09-14 之前这颗是「分类浅底、无描边」，和画布对不上 ——
+    /// 02 屏 PNG 里那三枚未选中胶囊是白的（`#FFFFFF` 19425 像素）加一圈 `#EAE2D8` 描边，
+    /// 不是四分类的浅底。
+    case normal
+    /// `--fill` 底、**无描边**。规范里的 `.pill.flat` / `.pill.tiny` 都是它 ——
+    /// 标签、筛选项、搜索范围、编辑器里的标签，全 App 的中性胶囊都走这一档。
+    case flat
+    case selected
+    case dashed
+}
 
-/// 分类胶囊 / 标签 / 单选胶囊。内边距 7·12、圆角 100、字号 12。
+/// 胶囊的三档尺寸。**三档都是对着画布量出来的，不是随手分的**：
+///
+/// | 档 | 字号 | 盒高 | 左右内距 | 画布出处 |
+/// |---|---|---|---|---|
+/// | `.regular` | 12 | 32 | 12 | `3:136` 分类胶囊 · `15:648` 筛选胶囊（明写 `height 32`） |
+/// | `.small`   | 11 | 27 | 10 | `3:254` 编辑器里的标签 · `3:998` 档位标签 · `8:526` 新增标签 |
+/// | `.tag`     | 10 | 24 | 10 | `3:154` 记录卡底部那排标签（PNG 实测 4 字 = 60×24） |
+///
+/// **盒高必须写死，不能靠上下内距撑出来。** 画布上这三种文字的行高是 18 / 15 / 14
+/// （≈1.4 倍字号），而 SwiftUI `Font.system(size:)` 的行高只有 ≈1.19 倍
+/// （12 号 → 14.3）。用 `padding(.vertical, 7)` 去凑，12 号胶囊只有 28 高，
+/// **比设计矮 4pt** —— 全 App 的胶囊都矮一档，这就是 2026-09-14 查出来的那处分歧。
+enum PillSize {
+    case regular, small, tag
+
+    var height: CGFloat {
+        switch self {
+        case .regular: return 32
+        case .small:   return 27
+        case .tag:     return 24
+        }
+    }
+
+    var hPad: CGFloat {
+        switch self {
+        case .regular:      return 12
+        case .small, .tag:  return 10
+        }
+    }
+
+    func font(_ medium: Bool) -> Font {
+        switch self {
+        case .regular: return medium ? Typo.pillSel : Typo.pill
+        case .small:   return medium ? Typo.pillSM  : Typo.pillS
+        case .tag:     return medium ? Typo.pillTM  : Typo.pillT
+        }
+    }
+}
+
+/// 分类胶囊 / 标签 / 单选胶囊。圆角 100，尺寸见 `PillSize`，四种样子见 `PillStyle`。
 struct Pill: View {
     let text: String
-    var style: PillStyle = .normal
+    var style: PillStyle = .flat
     var tint: Color = C.primary
-    var soft: Color = C.warm
-    var tiny: Bool = false
+    /// `.flat` 的底色。**默认 `C.fill`** —— 画布上记录卡的标签、编辑器里的标签、
+    /// 搜索筛选项用的都是这个中性浅槽色（02 屏 PNG 里 `#F1EAE2` 13386 像素、
+    /// 误用的 `#FAEDE6` 0 像素）。只有心情档位标签那种「带色标签」才显式传 `C.warm`。
+    var soft: Color = C.fill
+    var size: PillSize = .regular
+    /// 带色标签在画布上是 500（分类标记 `3:334`、档位标签 `3:999` 都是 Medium），
+    /// 中性标签一律 400。选中态本身就带 500，不用再传这个。
+    var emphasis: Bool = false
+    /// `.flat` 的**文字色**。`nil` → `C.ink2`（中性标签）。
+    ///
+    /// 2026-09-14 补：画布上的「带色标签」是**浅底 + 带色字**，不是深灰字 ——
+    /// 心情档位标签 `3:998` 是 `C.warm` 底 + **主色字**，详情页「已挂提醒」`3:157`
+    /// 是砂底 + **绿字**。而 `.normal` 时代 `tint` 在非选中态**完全没被用上**，
+    /// 那两个调用点传的 `tint:` 一直是死参数，字都被渲染成了 `C.ink2`。
+    /// 现在文字色有独立出口，别再用 `tint` 兼职（`tint` 只管 `.selected` 的底和描边）。
+    var textTint: Color? = nil
     var onTap: (() -> Void)?
 
     var body: some View {
         Text(text)
-            .font(style == .selected ? Typo.pillSel : Typo.pill)
+            .font(size.font(style == .selected || emphasis))
             .foregroundStyle(fg)
-            .padding(.horizontal, tiny ? 9 : 12)
-            .padding(.vertical, tiny ? 4 : 7)
+            .lineLimit(1)
+            .padding(.horizontal, size.hPad)
+            .frame(height: size.height)
             .background(bg, in: Capsule(style: .continuous))
             .overlay(
                 Capsule(style: .continuous)
@@ -113,6 +178,7 @@ struct Pill: View {
         switch style {
         case .selected: return .white
         case .normal:   return C.ink2
+        case .flat:     return textTint ?? C.ink2
         case .dashed:   return C.ink3
         }
     }
@@ -120,7 +186,8 @@ struct Pill: View {
     private var bg: Color {
         switch style {
         case .selected: return tint
-        case .normal:   return soft
+        case .normal:   return C.card
+        case .flat:     return soft
         case .dashed:   return .clear
         }
     }
@@ -128,7 +195,8 @@ struct Pill: View {
     private var borderColor: Color {
         switch style {
         case .selected: return tint
-        case .normal:   return .clear
+        case .normal:   return C.line2
+        case .flat:     return .clear
         case .dashed:   return C.line2
         }
     }
@@ -152,7 +220,7 @@ struct ChipRow<T: Hashable>: View {
         FlowLayout(spacing: 8) {
             ForEach(options, id: \.self) { opt in
                 Pill(text: label(opt),
-                     style: selection == opt ? .selected : .normal,
+                     style: selection == opt ? .selected : .flat,
                      onTap: { selection = opt })
             }
         }
@@ -396,7 +464,8 @@ struct RecordCard: View {
                             .foregroundStyle(C.ink3)
                     }
                     ForEach(record.tags, id: \.self) { t in
-                        Pill(text: t, tiny: true)
+                        // 记录卡底部的标签：画布上是 10 号（`3:155`），不是 12。
+                        Pill(text: t, size: .tag)
                     }
                 }
             }

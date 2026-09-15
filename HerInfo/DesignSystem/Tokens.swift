@@ -252,6 +252,12 @@ enum Typo {
     /// 胶囊 / 标签 · 12 / 400（选中 500）
     static let pill        = Font.system(size: 12)
     static let pillSel     = Font.system(size: 12, weight: .medium)
+    /// 胶囊中号 · 11（编辑器里的标签 `3:255`、心情档位标签 `3:999`）
+    static let pillS       = Font.system(size: 11)
+    static let pillSM      = Font.system(size: 11, weight: .medium)
+    /// 胶囊小号 · 10（记录卡底部那排标签 `3:155`、详情页分类标记 `3:334`）
+    static let pillT       = Font.system(size: 10)
+    static let pillTM      = Font.system(size: 10, weight: .medium)
     /// 说明 · 11 / 400
     static let caption     = Font.system(size: 11)
     /// 顶栏小标题 · 12 / 500
@@ -319,18 +325,37 @@ enum S {
 
 /// 五级投影，**全部用暖灰，不用纯黑**。
 /// 纯黑投影在米色底上会发脏，暖灰（带一点红黄）才像是「光从上方来」。
+///
+/// ## ⚠️ 这里的 `l1…l5` **不是**设计规范那张「投影 · 五级」卡的 L0–L4
+///
+/// 规范上的 L0–L4 是 **CSS 写法**（`0 20 40 −34 · #1F1E1B 50%` 这种），而 SwiftUI /
+/// Core Animation **没有 spread（第四个长度）**，`shadowRadius` 又约等于 CSS blur 的**一半**
+/// （CSS blur 16 → radius 8）。所以两边**不能直译**：照抄 `50%` 会糊成一块黑，
+/// 照抄 blur 会得到一圈过大的虚影。下面这五组是**按视觉重调过的值**，
+/// 对齐的是「分几层、每层做什么」，不是数字。
+///
+/// 2026-09-14 把对应关系写明，免得下次又有人拿 `l4` 去对规范的 L4：
+///
+/// | 规范 | 用途 | 这里 |
+/// |---|---|---|
+/// | L0 描边 | 绝大多数卡片 | 不是投影，`cardSurface` 里那圈 `C.line` 描边 |
+/// | L1 软卡 | 离开底色的卡 | `l1` |
+/// | L2 浮起 | 提醒卡、重点内容块 | `l2` |
+/// | L3 面板 | 底部面板、键盘 | `l4`（规范没单列底部导航，`l3` 是它） |
+/// | L4 主色 | 浮起按钮（全稿唯一带色的投影） | `primaryGlow` |
+/// | — | 轻提示 / 模态（规范没单列） | `l5` |
 enum Shadow {
-    /// L1 · 卡片静置
+    /// L1 · 卡片静置（规范 L1 软卡）
     static let l1Color  = Color.black.opacity(0.06)
     static let l1Radius: CGFloat = 8
     static let l1Y: CGFloat      = 2
 
-    /// L2 · 卡片悬停 / 浮起
+    /// L2 · 卡片悬停 / 浮起（规范 L2 浮起）
     static let l2Color  = Color.black.opacity(0.07)
     static let l2Radius: CGFloat = 14
     static let l2Y: CGFloat      = 4
 
-    /// L3 · 底部导航
+    /// L3 · 底部导航（规范里没有单列这一层，它是「贴在屏底的一整条」专用）
     static let l3Color  = Color.black.opacity(0.08)
     static let l3Radius: CGFloat = 20
     static let l3Y: CGFloat      = 8
@@ -344,6 +369,18 @@ enum Shadow {
     static let l5Color  = Color.black.opacity(0.12)
     static let l5Radius: CGFloat = 36
     static let l5Y: CGFloat      = 18
+
+    /// **规范 L4 · 全稿唯一带颜色的投影**（浮起按钮）。2026-09-14 从 `BrowseView` 里
+    /// 手写的那行收进来的 —— 之前只有那一处用得着，所以它一直散在调用点上，
+    /// 规范的 L4 在代码里等于没有落点。
+    ///
+    /// 规范写的是 `0 10 22 −10 · #BF614A 90%`，那是 **CSS**：`90%` 的透明度配上
+    /// `spread −10`（把影子整体收小 10）之后，实际是一圈紧贴的浅光晕。
+    /// SwiftUI 没有 spread，照抄 `90%` 会糊成一块脏色，所以这里沿用 02 / 06 屏
+    /// 已经验收过的那一组值（不要因为「和规范不一样」去改它）。
+    static let primaryGlowColor  = C.primary.opacity(0.35)
+    static let primaryGlowRadius: CGFloat = 14
+    static let primaryGlowY: CGFloat      = 6
 
     /// 滑块专用：它要让圆点「浮在轨道上」，深色下也必须保留。
     static let thumbColor  = Color(uiColor: UIColor(hex: 0x1F1E1B, alpha: 0.45))

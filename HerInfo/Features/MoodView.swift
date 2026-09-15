@@ -393,7 +393,10 @@ struct MoodSuggestOverlay: View {
             }
 
             HStack(spacing: 8) {
-                Pill(text: level.boardTitle, tint: C.primary, soft: C.warm, tiny: true)
+                // 档位标签 = 画布 `3:998`：`C.warm` 底 + **主色字** + 11 号 Medium。
+                // 不是记录卡那种中性小标签（`.tag` / `C.ink2`），别混用。
+                Pill(text: level.boardTitle, soft: C.warm, size: .small,
+                     emphasis: true, textTint: C.primary)
                 Text("档位随时可改，长按通知也能换")
                     .font(Typo.caption)
                     .foregroundStyle(C.ink3)

@@ -205,11 +205,14 @@ struct RecordEditorView: View {
                         FlowLayout(spacing: 8) {
                             ForEach(tags, id: \.self) { t in
                                 // 参数顺序必须跟属性声明顺序一致：
-                                // Pill 的存储属性是 text / style / tint / soft / tiny / onTap，
-                                // 把 tiny 写在 tint 前面是编译不过的（"argument must precede"）。
-                                Pill(text: t, tint: C.primary, soft: C.fill, tiny: true)
+                                // Pill 的存储属性是 text / style / tint / soft / size / emphasis / textTint / onTap，
+                                // 把 size 写在 tint 前面是编译不过的（"argument must precede"）。
+                                // 编辑器里的标签画布上是 11 号（`3:255`），比记录卡上的 10 号大一档；
+                                // 底色用默认的 `C.fill`，不用再显式传。
+                                Pill(text: t, size: .small)
                             }
-                            Pill(text: "＋ 新增标签", style: .dashed) { addTag() }
+                            // 「＋ 新增标签」也是 11 号（`8:526` 内距 6·10），与它右边的标签同级。
+                            Pill(text: "＋ 新增标签", style: .dashed, size: .small) { addTag() }
                         }
                     }
 

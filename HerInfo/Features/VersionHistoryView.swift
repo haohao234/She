@@ -123,8 +123,10 @@ struct VersionHistoryView: View {
 
     private func titleBlock(_ r: Record) -> some View {
         VStack(alignment: .leading, spacing: 8) {
+            // 分类标记：和详情页 `3:334` 同一个样子 —— 实心分类色 + 白字、10 号 Medium。
+            // 顺序要跟 Pill 的存储属性一致（text / style / tint / soft / size / emphasis / textTint / onTap）。
             Pill(text: r.cat.title, style: .selected,
-                 tint: r.cat.tint, soft: r.cat.soft, tiny: true)
+                 tint: r.cat.tint, size: .tag)
             Text(r.title)
                 .font(Typo.cardTitle)
                 .foregroundStyle(C.ink)

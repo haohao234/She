@@ -94,12 +94,13 @@ struct BrowseView: View {
 
                 // 四个分类胶囊。横排不滚动 ——
                 // 四个中文短标签在这个宽度里放得下，横滑会藏住后面两个。
+                // 未选中是 `.normal`（白底 + `--line2` 描边），**不带分类浅底** ——
+                // 02 屏 PNG 里那三枚是白的，浅底那一套是给别处用的。
                 HStack(spacing: 8) {
                     ForEach(Category.allCases) { c in
                         Pill(text: c.title,
                              style: cat == c ? .selected : .normal,
-                             tint: c.tint,
-                             soft: c.soft) {
+                             tint: c.tint) {
                             withAnimation(.easeOut(duration: 0.18)) { cat = c }
                         }
                     }
@@ -186,7 +187,11 @@ struct BrowseView: View {
                                        startPoint: .topLeading, endPoint: .bottomTrailing),
                         in: Circle()
                     )
-                    .shadow(color: C.primary.opacity(0.35), radius: 14, y: 6)
+                    // 全稿唯一的主色投影 = 规范的 L4。2026-09-14 收进 `Shadow.primaryGlow*`，
+                    // 之前只有这一处用得上，所以数字一直散在这里、规范那条在代码里没有落点。
+                    .shadow(color: Shadow.primaryGlowColor,
+                            radius: Shadow.primaryGlowRadius,
+                            y: Shadow.primaryGlowY)
             }
             .pressDown()
             .padding(.trailing, S.screen)
@@ -382,13 +387,17 @@ struct RecordDetailView: View {
 
                         SCard {
                             HStack(spacing: 8) {
+                                // 分类标记：画布上是 10 号、500（`3:334`），实心分类色 + 白字。
                                 Pill(text: r.cat.title, style: .selected,
-                                     tint: r.cat.tint, soft: r.cat.soft, tiny: true)
+                                     tint: r.cat.tint, size: .tag)
                                 if let m = r.reminder, m.isOn {
-                                    // 顺序必须跟 Pill 的存储属性一致（text / style / tint / soft / tiny / onTap），
-                                    // 写成 tiny:…, tint:… 会报 "argument 'tint' must precede argument 'tiny'"。
+                                    // 顺序必须跟 Pill 的存储属性一致
+                                    // （text / style / tint / soft / size / emphasis / textTint / onTap），
+                                    // 写成 size:…, tint:… 会报 "argument 'tint' must precede argument 'size'"。
+                                    // 「已挂提醒」在画布上是 10 号 Regular（`3:157`），**砂底绿字** ——
+                                    // 字色走 `textTint`，不是 `tint`（`tint` 只管 `.selected` 的底与描边）。
                                     Pill(text: m.kind == .date ? "已挂提醒" : "到\(m.placeName ?? "那")提醒",
-                                         tint: C.care, soft: C.moss, tiny: true)
+                                         soft: C.moss, size: .tag, textTint: C.care)
                                 }
                                 Spacer(minLength: 0)
                             }
@@ -412,7 +421,7 @@ struct RecordDetailView: View {
 
                             HStack(spacing: 6) {
                                 ForEach(r.tags, id: \.self) { t in
-                                    Pill(text: t, tiny: true)
+                                    Pill(text: t, size: .tag)
                                 }
                             }
                         }

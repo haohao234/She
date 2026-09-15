@@ -122,10 +122,12 @@ struct OnboardingView: View {
                     .foregroundStyle(C.ink2)
                 FlowLayout(spacing: 8) {
                     ForEach(["口味与忌口", "纪念日", "雷区", "她的日常"], id: \.self) { t in
-                        // 用 `.normal`（浅底无边框）而不是 `.dashed` ——
+                        // 用 `.flat`（`C.fill` 浅底、无边框）而不是 `.dashed` ——
                         // `.dashed` 在这个 App 里是「＋ 新增」的专属样子，
                         // 这四个只是说明「以后还能补什么」，不是四个可点的入口。
-                        Pill(text: t, tiny: true)
+                        // 尺寸是**标准档**不是小标签：画布 `8:167` 明写高 33、12 号 Regular
+                        // （`.regular` 是 32 高 / 左右 12，差 1pt 与 2pt，视觉无感，统一档位更值）。
+                        Pill(text: t)
                     }
                 }
             }
