@@ -645,7 +645,17 @@ struct CycleRecordSheet: View {
         // 提醒跟着重排 —— 日子变了，通知也得跟着变。
         // **不在 save 里直接排通知**：通知是「派生结果」，
         // 统一由 rescheduleAll 一个出口负责，免得出现两处都在排的情况。
-        Task { await CycleReminder.rescheduleAll(context: ctx,
+        //
+        // **`ctx` 必须先取出来再进 Task。**
+        // 下面那句 `dismiss()` 一执行这一屏就没了，而 `@Environment(\.modelContext)`
+        // 是跟着这一屏的 —— 任务到那时再读 `self.ctx`，拿到的是「没被安装过」的默认值，
+        // 拿它去 fetch / insert 就是崩在 SwiftData 里。
+        //
+        // 这个坑 2026-09-15 已经在 `RecordEditorView` 上炸过一次
+        // （导入图片后点「完成」闪退）。那次是 0.8 秒的延迟任务、这次是立刻执行 ——
+        // 但「任务比这一屏活得久」是同一条，所以修法也一样：先把值取出来。
+        let context = ctx
+        Task { await CycleReminder.rescheduleAll(context: context,
                                                  leadDays: leadDays,
                                                  hour: notifyHour,
                                                  enabled: remindMe) }
@@ -816,7 +826,10 @@ struct CycleNotifyView: View {
                 Button("关闭") { dismiss() }.foregroundStyle(C.ink2)
             }
         }
-        .task { await reschedule() }
+        .task {
+            let context = ctx
+            await reschedule(context)
+        }
         .alert("通知被关掉了", isPresented: $showDeniedHint) {
             Button("去设置") { ReminderService.shared.openSystemSettings() }
             Button("知道了", role: .cancel) { }
@@ -838,7 +851,8 @@ struct CycleNotifyView: View {
                     let on = leadDays == d
                     Button {
                         leadDays = d
-                        Task { await reschedule() }
+                        let context = ctx
+                        Task { await reschedule(context) }
                     } label: {
                         Text(d == 0 ? "当天" : "\(d) 天")
                             .font(Typo.btn)
@@ -864,7 +878,8 @@ struct CycleNotifyView: View {
                     ForEach(hourChoices, id: \.self) { h in
                         Button(String(format: "%02d:00", h)) {
                             notifyHour = h
-                            Task { await reschedule() }
+                            let context = ctx
+                            Task { await reschedule(context) }
                         }
                     }
                 } label: {
@@ -880,7 +895,10 @@ struct CycleNotifyView: View {
             Toggle("开启提醒", isOn: $notifyOn)
                 .font(Typo.bodyS)
                 .tint(C.primary)
-                .onChange(of: notifyOn) { _, _ in Task { await reschedule() } }
+                .onChange(of: notifyOn) { _, _ in
+                    let context = ctx
+                    Task { await reschedule(context) }
+                }
         }
         .padding(18)
         .background(C.card, in: RoundedRectangle(cornerRadius: R.card, style: .continuous))
@@ -901,7 +919,10 @@ struct CycleNotifyView: View {
                 .lineLimit(2...4)
                 .padding(12)
                 .background(C.fill, in: RoundedRectangle(cornerRadius: R.input, style: .continuous))
-                .onChange(of: message) { _, _ in Task { await reschedule() } }
+                .onChange(of: message) { _, _ in
+                    let context = ctx
+                    Task { await reschedule(context) }
+                }
 
             HStack(spacing: 8) {
                 preset("提醒我别惹她")
@@ -915,7 +936,8 @@ struct CycleNotifyView: View {
     private func preset(_ text: String) -> some View {
         Button {
             message = text
-            Task { await reschedule() }
+            let context = ctx
+            Task { await reschedule(context) }
         } label: {
             Text(text)
                 .font(Typo.captionM)
@@ -945,13 +967,31 @@ struct CycleNotifyView: View {
         .background(CYC.noteBg, in: RoundedRectangle(cornerRadius: R.input, style: .continuous))
     }
 
-    private func reschedule() async {
+    /// 重排提醒。
+    ///
+    /// **`context` 必须由调用方传进来，不能在这里读 `self.ctx`。**
+    /// 这个函数第一句 `await requestNotificationPermission()` 会等系统授权弹窗 ——
+    /// 那可能持续好几秒，用户完全来得及把这个 sheet 关掉。
+    /// 等 await 回来再读 `self.ctx`，读到的就是「这一屏已经没了」的默认值，
+    /// 拿它去 fetch / insert 会崩在 SwiftData 里（EXC_BREAKPOINT）。
+    ///
+    /// 这不是假想：同一个坑 2026-09-15 在 `RecordEditorView` 上真的炸过一次
+    /// （导入图片后点「完成」闪退，那次是 0.8 秒的延迟任务）。修法一样 ——
+    /// **在还看得见这一屏的时候把值取出来。**
+    ///
+    /// `notifyOn` / `leadDays` / `notifyHour` 一并提前取好：
+    /// 它们是「跟着这一屏的东西」，理由和 `context` 是同一条。
+    private func reschedule(_ context: ModelContext) async {
+        let on = notifyOn
+        let days = leadDays
+        let hour = notifyHour
+
         let granted = await ReminderService.shared.requestNotificationPermission()
-        if !granted && notifyOn { showDeniedHint = true }
-        await CycleReminder.rescheduleAll(context: ctx,
-                                          leadDays: leadDays,
-                                          hour: notifyHour,
-                                          enabled: notifyOn)
+        if !granted && on { showDeniedHint = true }
+        await CycleReminder.rescheduleAll(context: context,
+                                          leadDays: days,
+                                          hour: hour,
+                                          enabled: on)
     }
 }
 
