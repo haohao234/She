@@ -29,15 +29,6 @@ final class Record {
     /// 标签。展示在记录卡底部（02 屏）。
     var tags: [String]
 
-    /// 配图。一条记录最多 9 张 —— 这个上限写在 UI 上（34 屏），也写在这里。
-    ///
-    /// ⚠️ **2026-09-15 起，这个关系只被 `deleteRule` 用，代码里一次都不再读它。**
-    /// 配图的真相是下面的 `photoHashes`。保留这个声明而不是删掉，是因为
-    /// 删关系是一次结构性迁移（要在所有老设备上冒「容器打不开」的险），
-    /// 而留着它只是多一列没人读的数据。
-    @Relationship(deleteRule: .cascade, inverse: \Photo.record)
-    var photos: [Photo] = []
-
     /// **配图的真相。** 顺序 = 用户在编辑器里一张张拖出来的顺序；
     /// 元素是 `PhotoStore` 沙盒里 `Photos/<hash>.jpg` 的 hash。
     ///
@@ -58,6 +49,17 @@ final class Record {
     ///
     /// `Photo` 表因此退成**只读的历史数据**：只用于老库的一次性回填
     /// （见 `HerInfoStore.backfillPhotoHashes`），不再写、不再读。
+    ///
+    /// **2026-09-15 续：`photos` 这个关系本身也删了**（`Photo.record` 一并删）。
+    /// 上一版留了它，理由是「删关系要冒一次迁移风险」—— 那个理由不成立：
+    /// 这一版**本来就要跑一次迁移**（就是新增上面这个 `photoHashes`），
+    /// 同一次迁移里多删两个关系，风险与只加一个属性相同。
+    ///
+    /// 而留着它的代价是实的：**`ctx.delete(record)` 会按 `deleteRule: .cascade`
+    /// 去解析 `photos`、把 `Photo` 行 fault 出来删** —— 于是「删掉一条挂着配图的
+    /// 老记录」（回收站 30 天清理 / 撤销刚建的那条 / 用户手动清空）仍要
+    /// materialize `Photo`，仍可能崩在同一个 trap 上。
+    /// **业务代码不读它了，框架内部还在读。** 删掉关系，这条路才真的断。
     var photoHashes: [String] = []
 
     /// 提醒。一条记录最多挂一个 —— 挂两个的话，「这条记录在提醒我什么」就说不清了。
@@ -138,7 +140,12 @@ final class Photo {
     /// 拍摄/添加时间，用于导出时写 EXIF 补充信息（35 屏「包含图片」）。
     var addedAt: Date
 
-    var record: Record?
+    // ⚠️ **这里原来有一个 `var record: Record?`，与 `Record.photos` 互为反向。
+    // 2026-09-15 一并删了。** 只删 `Record.photos` 是不够的：只要反向关系还在，
+    // `ctx.delete(record)` 时 SwiftData 仍要维护它（把 `Photo.record` 置空），
+    // 照样得把 `Photo` 对象 fault 出来。
+    // 所以 `Photo` 行现在**不再知道自己属于哪条记录** —— 配图的归属以
+    // `Record.photoHashes` 为准（它才是真相，见那里的说明）。
 
     // id 取 12 位，理由见 `Record.newID()`（6 位 = 24 bit，会撞唯一约束且撞了不报错）。
     init(id: String = "p_" + UUID().uuidString.prefix(12).lowercased(),
@@ -670,6 +677,10 @@ final class Revision {
 enum HerInfoStore {
     static let schema = Schema([
         Record.self,
+        // `Photo` 留在 schema 里，**不是因为有谁在用**（两个关系已删、代码一行都不读），
+        // 而是因为：把它移出 schema 等于让 SwiftData **删掉整张表** ——
+        // 那是比「留一张没人读的表」重得多的迁移动作。
+        // 留着它，老库那批行就在原处放着，既不影响打开，也留了一线恢复的余地。
         Photo.self,
         Profile.self,
         Reminder.self,
@@ -1063,8 +1074,12 @@ enum HerInfoStore {
     ///     立刻又按了撤销。把它塞进回收站是错的：27 屏会因此多出一条
     ///     「📷 1、没标题」的残骸，而用户以为自己撤销之后什么都没留下。
     ///
-    /// 所以这里删干净：版本行、记录本身（图片行与提醒行由 `Record` 上的
-    /// 级联删除带走，不重复删）。
+    /// 所以这里删干净：版本行、记录本身（提醒行由 `Record` 上的级联删除带走，
+    /// 不重复删）。
+    ///
+    /// **图片行不再被带走了**（2026-09-15 删了 `photos` 关系）：老库里那些
+    /// `Photo` 行会留在原处。它们没人读、也不占内存，图片文件由
+    /// `PhotoStore.purgeOrphans` 按引用全集清 —— 所以不需要为它们额外做什么。
     ///
     /// **图片文件不在这里删** —— 沿用这个 App 一贯的分工：文件只由
     /// `PhotoStore.purgeOrphans` 在下次启动时按「引用全集」统一清。
