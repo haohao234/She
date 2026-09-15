@@ -109,7 +109,7 @@ final class ReminderService: NSObject {
     }
 
     private func scheduleDate(_ r: Reminder, photoIndex: [String: [String]]?) async {
-        let index = photoIndex ?? Self.photoIndex(from: r.modelContext)
+        let index = photoIndex ?? Self.photoIndex(of: r.record)
         let content = UNMutableNotificationContent()
         content.title = r.title
         content.body = r.previewLine        // 与 32 屏「通知预览」逐字一致
@@ -212,7 +212,7 @@ final class ReminderService: NSObject {
     /// 配图索引在这里建一次、所有提醒共用 —— 每条提醒各建一次就是 N 次全表扫描。
     /// 上下文从记录自己身上取（启动那一步的调用方拿不到 `ModelContext`）。
     func rescheduleAll(_ records: [Record]) {
-        let index = Self.photoIndex(from: records.lazy.compactMap(\.modelContext).first)
+        let index = Self.photoIndex(from: records)
         for r in records.compactMap(\.reminder) where r.isOn {
             Task { await schedule(r, photoIndex: index) }
         }
@@ -220,29 +220,31 @@ final class ReminderService: NSObject {
 
     // MARK: - 通知里带什么
 
-    /// 「记录 id → 它配图的 hash（按 `order` 排好）」。
+    /// 「记录 id → 它配图的 hash（已按顺序排好）」。
     ///
-    /// **从 `Photo` 表数，绝不走 `record.photos` 关系。**
-    /// 关系里可能挂着墓碑对象（行已不在库里、却还在数组里，见
-    /// `HerInfoStore.repairPhotoLinks`），读它的任何属性都会在 SwiftData 内部 `fatalError`。
-    /// 而这一步跑在**启动重排**里（`rescheduleAll` 的 Task 会走到这里），
-    /// 崩了就不是「某条提醒没排上」，是 **App 打不开**。
+    /// **读的是 `Record.photoHashes` 这个标量数组，不碰任何模型关系。**
     ///
-    /// 从 `Photo` 那一侧数为什么安全：`p.record` 是指向 `Record` 的 to-one，
-    /// 而 `Record` 一定是活行（启动那一步刚整体 fetch 过），读它永远不触墓碑。
-    /// `p.hash` 本来就存在 `Photo` 行上，所以两边集合完全等价。
+    /// 这里曾经写的是「从 `Photo` 表 fetch 全表再按 `p.record?.id` 分桶」，
+    /// 当时的想法是「绕开 `record.photos` 关系就不会碰到墓碑对象」。
+    /// 那是错的，而且错得很有教益：2026-09-15 的 11:49 那份真机日志正是崩在这一句，
+    /// trap 地址与「读 `record.photos`」那两次**逐字节相同**（`SwiftData + 0x9e77c`）。
+    /// 也就是说真正的判据不是「读关系还是读表」，而是**「读不读 `Photo` 这个模型对象」**。
     ///
-    /// 拿不到上下文（记录已经被删）时返回空表 —— 通知少一块配图信息，
-    /// 但一条没配图的提醒仍然是一条完整的提醒。
-    private static func photoIndex(from ctx: ModelContext?) -> [String: [String]] {
-        guard let ctx else { return [:] }
-        let photos = (try? ctx.fetch(FetchDescriptor<Photo>())) ?? []
-        var buckets: [String: [Photo]] = [:]
-        for p in photos {
-            guard let rid = p.record?.id else { continue }
-            buckets[rid, default: []].append(p)
-        }
-        return buckets.mapValues { $0.sorted { $0.order < $1.order }.map(\.hash) }
+    /// 现在标量数组把这件事彻底绕开了：`photoHashes` 就是一个 `[String]`，
+    /// 读到它不需要 SwiftData 参与任何反序列化。见 `Record.photoHashes`。
+    ///
+    /// 这一步跑在**启动重排**里，所以它崩的后果不是「某条提醒没排上」，
+    /// 而是 **App 打不开** —— 它值得比别处多一层的谨慎。
+    private static func photoIndex(from records: [Record]) -> [String: [String]] {
+        var index: [String: [String]] = [:]
+        for r in records { index[r.id] = r.photoHashes }
+        return index
+    }
+
+    /// 单独一条记录的版本。`scheduleDate` 在拿不到批量索引时用它。
+    private static func photoIndex(of record: Record?) -> [String: [String]] {
+        guard let r = record else { return [:] }
+        return [r.id: r.photoHashes]
     }
 
     /// 载荷。键名全部来自 `HINotify.Key` ——

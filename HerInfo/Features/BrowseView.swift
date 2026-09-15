@@ -361,7 +361,9 @@ struct RecordDetailView: View {
     /// 「the ID … occurs multiple times」），详情页的拖动排序也一定定位错。
     /// 理由见 `Photo.uniqueHashes`。
     private var photoHashes: [String] {
-        Photo.uniqueHashes((record?.photos ?? []).sorted { $0.order < $1.order }.map(\.hash))
+        // 标量数组，顺序就是当时拖出来的顺序，不需要再按 `order` 排
+        // （`order` 这个概念随 `Photo` 表一起退休了）。
+        Photo.uniqueHashes(record?.photoHashes ?? [])
     }
 
     private var history: [Revision] {

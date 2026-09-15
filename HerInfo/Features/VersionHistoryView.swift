@@ -265,39 +265,15 @@ struct VersionHistoryView: View {
                             photoHashes: v.photoHashes,
                             catRaw: v.catRaw))
 
-        // 配图跟着快照走。**只改 Photo 行，不碰文件** ——
-        // 被移出的图可能还被更早的版本引用着，删文件是启动时孤儿清理的事。
-        // **与 34 屏 `RecordEditorView.save` 里那一段是同一段、同一条铁律**：
-        // 关系只读一次；删之前先把 `p.record = nil` 摘掉关系。
-        // 理由（墓碑对象为什么会崩、为什么 `isDeleted` 拦不住）写在那边，不重复。
+        // 配图跟着快照走。**只写标量，不碰 `Photo` 表、不碰文件。**
         //
-        // 这一段原来写的是 `$0.hash == h && !$0.isDeleted` —— 两个错叠在一起：
-        // `&&` 从左往右算，所以先读的正是会崩的那个 `hash`；而 `!isDeleted`
-        // 对真正危险的墓碑对象返回 false，那道守卫对它**根本不起作用**。
-        let existing = Array(r.photos)
-        let keep = Set(v.photoHashes)
-        var byHash: [String: Photo] = [:]
-        var extra: [Photo] = []
-        for p in existing {
-            if byHash[p.hash] == nil { byHash[p.hash] = p } else { extra.append(p) }
-        }
-        for p in existing where !keep.contains(p.hash) {
-            p.record = nil
-            ctx.delete(p)
-        }
-        for p in extra {
-            p.record = nil
-            ctx.delete(p)
-        }
-        for (idx, h) in v.photoHashes.enumerated() {
-            if let p = byHash[h] {
-                p.order = idx
-            } else {
-                let p = Photo(hash: h, order: idx)
-                ctx.insert(p)
-                p.record = r
-            }
-        }
+        // 这里原来是和 `RecordEditorView.save` 里一模一样的一段「先摘关系再删」。
+        // 那一段的三种写法、三次崩溃、同一个 trap 地址，理由都写在
+        // `EditorView` 那边，不重复。一句话：**读 `Photo` 就崩，所以不读。**
+        //
+        // 「不删文件」这条规矩不变：被移出的图可能还被更早的版本引用着，
+        // 删文件是启动时孤儿清理（`PhotoStore.purgeOrphans`）的事。
+        r.photoHashes = Photo.uniqueHashes(v.photoHashes)
 
         try? ctx.save()
         comparing = 0

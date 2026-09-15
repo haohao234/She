@@ -486,7 +486,9 @@ struct RecordEditorView: View {
             title = r.title
             body_ = r.body
             tags = r.tags
-            photoHashes = Photo.uniqueHashes(r.photos.sorted { $0.order < $1.order }.map(\.hash))
+            // 配图读的是**标量数组**，不是 `r.photos` 那个关系 ——
+            // 后者正是三份真机崩溃日志的崩点（见 `Record.photoHashes`）。
+            photoHashes = Photo.uniqueHashes(r.photoHashes)
             remindsMe = r.reminder?.isOn ?? false
             version = r.version
             lastSnapshot = snapshot
@@ -581,67 +583,29 @@ struct RecordEditorView: View {
         }
         lastSnapshot = snapshot
 
-        // 配图同步：按数组顺序重排 order，删掉已经不在数组里的。
+        // 配图：**只写一个标量，一个字都不碰 `Photo` 表。**
         //
-        // **这一段有两条铁律，都是两份真机崩溃日志换来的（2026-09-15 的 10:25 与 11:10）。**
-        // 那两份日志的栈**都停在 SwiftData 的 `PersistentModel.getValue(forKey:)`**，
-        // 也就是「读一个 `Photo` 的属性就崩」，而且两次的 SwiftData 内部三帧偏移
-        // 一模一样 —— 说明崩的是同一个动作，跟调用方是自动保存还是手动保存无关。
+        // 这一段是这个 App 最贵的一段代码 —— 它值三份真机崩溃日志
+        // （2026-09-15 的 10:25 / 11:10 / 11:49）。三种写法，三次都崩：
+        //   ① `target.photos.first(where: { $0.hash == h })`                    → 崩
+        //   ② 加一道 `!$0.isDeleted` 守卫                                       → 照崩
+        //   ③ 关系只读一次 + 删之前先 `p.record = nil` 摘掉关系                  → 还是崩
         //
-        // 崩的那个 `Photo` 是**墓碑对象**（tombstone）：它的行已经从库里没了，
-        // 却还挂在 `target.photos` 里。它是这么来的 ——
-        //   `ctx.delete(p)` 只把 p **登记**删除，**并没有把 p 从关系上摘掉**；
-        //   于是下一次再 materialize `target.photos`，SwiftData 交回来的就是那个
-        //   行已不存在的墓碑。对墓碑读**任何**属性都会走进 SwiftData 内部的
-        //   fatalError（EXC_BREAKPOINT，`brk #1`）。
+        // 三次的 trap 地址**逐字节相同**：`SwiftData + 0x9e77c`。
+        // 而 11:49 那一次的调用方甚至不在这一屏，是启动流程里的
+        // `ReminderService.photoIndex` —— 它当时读的是「`Photo` 全表 fetch 出来的行」，
+        // 看着已经绕开了关系，其实还是同一个动作：**读 `Photo` 这个模型对象**。
         //
-        // **它没法用 `isDeleted` 防住 —— 这一点上一版判断错了，白改了一次。**
-        // `p.isDeleted` 对墓碑返回 **false**（它不是「本次登记删除」，
-        // 而是「库里已经没有它」），所以「先判 isDeleted 再读 hash」那套顺序写法
-        // 在这里根本不会触发。上一版加的正是 `!$0.isDeleted && $0.hash == h`，
-        // 这次真机照样崩在同一句。
+        // 三个病例指向同一句话：**只要读取经过 `Photo`，就有崩的余地，
+        // 换路径不解决问题。** 所以第四版不再换路径，而是不读了 ——
+        // 配图的真相搬到 `Record.photoHashes` 标量数组上
+        // （和 `Revision.photoHashes` 同一套写法，那边从第一天起就是标量）。
+        // `Photo` 表退成只读的历史数据，只留给老库回填
+        // （见 `HerInfoStore.backfillPhotoHashes`）。
         //
-        // 所以改成：
-        //   ① 关系**只读一次**，读成 `existing` 之后一次都不再回头读 `target.photos`；
-        //   ② 删之前**先从关系上摘掉**（`p.record = nil`），
-        //      关系表里因此不会留下指向已删行的悬空项 —— 这是根上的修法。
-        let existing = Array(target.photos)
-        let keep = Set(photoHashes)
-
-        // 同一个 hash 在关系里出现两次是可能的：「恢复历史版本」那条路是照
-        // `Revision.photoHashes` 整份重放的（见 `Photo.uniqueHashes` 的说明）。
-        // 只留第一条，其余按「多余」一起删掉 —— 顺手把那个已知问题在这里收口。
-        var byHash: [String: Photo] = [:]
-        var extra: [Photo] = []
-        for p in existing {
-            if byHash[p.hash] == nil { byHash[p.hash] = p } else { extra.append(p) }
-        }
-
-        // 删：不在 keep 里的，以及重复的。**`p.record = nil` 必须写在 `ctx.delete` 前面。**
-        for p in existing where !keep.contains(p.hash) {
-            p.record = nil
-            ctx.delete(p)
-        }
-        for p in extra {
-            p.record = nil
-            ctx.delete(p)
-        }
-
-        // 重排 + 补插。这里只碰 `byHash`（从 `existing` 里挑出来的活对象）。
-        for (idx, h) in photoHashes.enumerated() {
-            if let p = byHash[h] {
-                p.order = idx
-            } else {
-                let p = Photo(hash: h, order: idx)
-                // **先入 context、再挂关系。**
-                // 反过来的话，`target` 已经在库里、`p` 还不在 ——
-                // 这条关系是在两个不同世界的对象之间建立的，
-                // SwiftData 对这种情况不承诺行为（它会自己决定要不要把 `p` 收进来）。
-                // 入完再挂，两边都在同一个 context 里，这条关系才是确定的。
-                ctx.insert(p)
-                p.record = target
-            }
-        }
+        // 顺带把「同一条记录里出现两行同 hash」那个已知问题一起收口了：
+        // 标量数组不存在重复行的概念，`uniqueHashes` 一过就干净。
+        target.photoHashes = Photo.uniqueHashes(photoHashes)
 
         syncReminder(for: target)
         try? ctx.save()

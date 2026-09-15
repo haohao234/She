@@ -456,10 +456,13 @@ struct RecordCard: View {
                     .multilineTextAlignment(.leading)
             }
 
-            if !record.tags.isEmpty || !record.photos.isEmpty {
+            // 配图张数走标量（`record.photoHashes`），不走 `record.photos` 关系。
+            // 这一行在列表里**每一条记录都要跑一次**，是关系读取最密集的地方 ——
+            // 也就是说它是「墓碑对象」最容易撞上的地方之一（见 `Record.photoHashes`）。
+            if !record.tags.isEmpty || !record.photoHashes.isEmpty {
                 HStack(spacing: 6) {
-                    if !record.photos.isEmpty {
-                        Label("\(record.photos.count)", systemImage: "photo")
+                    if !record.photoHashes.isEmpty {
+                        Label("\(record.photoHashes.count)", systemImage: "photo")
                             .font(Typo.pill)
                             .foregroundStyle(C.ink3)
                     }

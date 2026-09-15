@@ -29,9 +29,36 @@ final class Record {
     /// 标签。展示在记录卡底部（02 屏）。
     var tags: [String]
 
-    /// 图片。一条记录最多 9 张 —— 这个上限写在 UI 上（34 屏），也写在这里。
+    /// 配图。一条记录最多 9 张 —— 这个上限写在 UI 上（34 屏），也写在这里。
+    ///
+    /// ⚠️ **2026-09-15 起，这个关系只被 `deleteRule` 用，代码里一次都不再读它。**
+    /// 配图的真相是下面的 `photoHashes`。保留这个声明而不是删掉，是因为
+    /// 删关系是一次结构性迁移（要在所有老设备上冒「容器打不开」的险），
+    /// 而留着它只是多一列没人读的数据。
     @Relationship(deleteRule: .cascade, inverse: \Photo.record)
     var photos: [Photo] = []
+
+    /// **配图的真相。** 顺序 = 用户在编辑器里一张张拖出来的顺序；
+    /// 元素是 `PhotoStore` 沙盒里 `Photos/<hash>.jpg` 的 hash。
+    ///
+    /// **为什么把它从关系搬到标量。** 三份真机崩溃日志（10:25 / 11:10 / 11:49）
+    /// 的 trap 地址**逐字节相同**（`SwiftData + 0x9e77c`），而三次的调用方
+    /// 各不相同：两次在 `RecordEditorView.save` 里读 `target.photos`，
+    /// 一次在 `ReminderService.photoIndex` 里读 `Photo.hash`。三次的共同点只有
+    /// 一个 —— **都在读 `Photo` 这个模型对象**。上一轮把读取从「关系数组」
+    /// 换成「`Photo` 全表 fetch」，看着换了条路，其实还是同一个动作，所以照崩。
+    ///
+    /// 结论：**只要读取经过 `Photo`，就有崩的余地；换路径没用，只能不读。**
+    /// 而这件事本来就没有必要经过它 —— `Revision.photoHashes` 从第一天起
+    /// 就是标量数组，历史版本能这么存，当前状态当然也能。
+    ///
+    /// 搬过来之后，读配图变成读一个 `[String]`：列表卡片的「📷 N」、
+    /// 详情页的九宫格、编辑页打开与保存、历史版本恢复、导出、通知附件、
+    /// 启动时的孤儿图片统计 —— 全都是纯内存操作，一条崩路径都不剩。
+    ///
+    /// `Photo` 表因此退成**只读的历史数据**：只用于老库的一次性回填
+    /// （见 `HerInfoStore.backfillPhotoHashes`），不再写、不再读。
+    var photoHashes: [String] = []
 
     /// 提醒。一条记录最多挂一个 —— 挂两个的话，「这条记录在提醒我什么」就说不清了。
     @Relationship(deleteRule: .cascade, inverse: \Reminder.record)
@@ -662,6 +689,14 @@ enum HerInfoStore {
         )
     }
 
+    /// 「数据库打不开、已经挪到一边并新建了一份」的时间戳。
+    ///
+    /// 由下面的 `containerAfterSettingAsideBrokenStore` 写，
+    /// `HerInfoApp` 启动时读它 —— 见到就弹一句实话（见 `announceStoreResetIfAny`）。
+    /// 用 `UserDefaults` 而不是文件：它只在**挪库成功之后**写，
+    /// 不在崩溃路径上，不需要 `.atomic` 那种强度。
+    static let storeResetKey = "hi.store.setAsideAt"
+
     /// 容器打不开时的最后一道：**把现有库文件整份挪到一边，再新建一份空的**。
     ///
     /// 原来 `HerInfoApp` 在 `container()` 抛错时直接 `fatalError` —— 想法是对的
@@ -753,86 +788,6 @@ enum HerInfoStore {
         ctx.insert(m)
 
         try? ctx.save()
-    }
-
-    // MARK: - 关系表自愈（一次性）
-
-    /// 「关系表自愈已经做过」/「试过但没做完」两个标记。
-    ///
-    /// **先落 `attempted` 再动手，这个顺序是有意的** —— 见 `repairPhotoLinks`。
-    static let photoRepairAttemptedKey = "hi.repair.photoLinks.attempted.v1"
-    static let photoRepairDoneKey      = "hi.repair.photoLinks.done.v1"
-
-    /// 「数据库打不开、已经挪到一边并新建了一份」的时间戳。
-    /// 由 `HerInfoApp` 在兜底成功时写入，启动时读它给用户一句实话。
-    static let storeResetKey = "hi.store.setAsideAt"
-
-    /// 关系表还能不能信。
-    ///
-    /// `false` 只有一种情形：**上一次自愈动到一半就崩了**。
-    /// 那时后面所有碰 `record.photos` 的启动步骤都要跳过 ——
-    /// 让 App 能开起来，比把提醒重排、把孤儿文件清掉重要得多。
-    @MainActor
-    static var photoLinksTrustworthy: Bool {
-        let d = UserDefaults.standard
-        return d.bool(forKey: photoRepairDoneKey) || !d.bool(forKey: photoRepairAttemptedKey)
-    }
-
-    /// 一次性自愈：把每条记录的 `photos` 关系按「活着的 `Photo` 行」整份重写。
-    ///
-    /// **它修的是什么。** 2026-09-15 两份真机崩溃日志（10:25 与 11:10）的栈
-    /// **都停在 SwiftData 的 `PersistentModel.getValue(forKey:)`** —— 读一个 `Photo`
-    /// 的属性就崩，两次的 SwiftData 内部三帧偏移完全一致。那个 `Photo` 是
-    /// **墓碑对象**：行已经不在库里，却还挂在 `Record.photos` 里。
-    ///
-    /// 它由「只 `ctx.delete(p)`、不先从关系上摘掉」这种写法留下（两处源头已修：
-    /// `RecordEditorView.save` 与 `VersionHistoryView.restore`）。而它一旦留在关系里，
-    /// 后果是**成对出现**的：
-    ///   · 编辑那条记录 → 保存时读 `Photo.hash` → 崩；
-    ///   · **下一次启动** → `bootstrap` 里两处会读 `record.photos` → 还是崩。
-    ///     用户看到的就是「导入图片崩了，然后连 APP 都打不开了」。
-    /// 第二次那个后果是这次必须加自愈的原因：不清掉它，App 永远开不起来。
-    ///
-    /// **为什么从 `Photo` 那一侧重建。** `Photo` 行是从库里 `fetch` 出来的**活行**，
-    /// 读它的 `hash` 永远安全；`p.record` 指向的 `Record` 也一定在（上面刚 fetch 过全集）。
-    /// 而 `r.photos` 那一边正是会交出墓碑的方向 —— 所以不能从那边数。
-    /// 把算好的数组赋回去 = 整份重写关系表，悬空项被冲掉。
-    ///
-    /// **两个标记的顺序是这个函数最要紧的一行。** 先把 `attempted` 落盘再动手：
-    /// 万一 `r.photos = want` 这一句本身也崩（赋值理论上只碰标识符、不该 materialize
-    /// 旧对象，但这一条没有真机证据），下次启动就会看到「试过、没做完」→ 跳过它。
-    /// 否则就成了「每次启动都崩」的死循环，那比不修还糟。
-    ///
-    /// 返回 true = 这次真的重写了。
-    @MainActor
-    @discardableResult
-    static func repairPhotoLinks(in ctx: ModelContext) -> Bool {
-        let d = UserDefaults.standard
-        if d.bool(forKey: photoRepairDoneKey) { return false }        // 做过了
-        if d.bool(forKey: photoRepairAttemptedKey) { return false }   // 上次没做完，不再试
-
-        d.set(true, forKey: photoRepairAttemptedKey)                  // ← 必须在动手之前
-
-        let records = (try? ctx.fetch(FetchDescriptor<Record>())) ?? []
-        guard !records.isEmpty else {
-            d.set(true, forKey: photoRepairDoneKey)
-            return false
-        }
-        let photos = (try? ctx.fetch(FetchDescriptor<Photo>())) ?? []
-
-        // **只从 Photo 这一侧读挂靠关系。** 从 Record 那一侧读会 materialize 出墓碑。
-        var byRecord: [String: [Photo]] = [:]
-        for p in photos {
-            guard let rid = p.record?.id else { continue }
-            byRecord[rid, default: []].append(p)
-        }
-
-        for r in records {
-            r.photos = (byRecord[r.id] ?? []).sorted { $0.order < $1.order }
-        }
-        try? ctx.save()
-        d.set(true, forKey: photoRepairDoneKey)
-        return true
     }
 
     // MARK: - 来自锁屏通知的两件事
@@ -1022,6 +977,67 @@ enum HerInfoStore {
     /// 它引用的图片才会在同一次启动里被扫成孤儿一起清掉。
     @MainActor
     @discardableResult
+    // MARK: - 老库的配图搬进标量（一次性）
+
+    /// 「配图搬家」这件事做过了没有。见下面的 `backfillPhotoHashes`。
+    static let photoBackfillKey = "hi.backfill.photoHashes.v1"
+
+    /// 把老库里存在 `Photo` 关系上的配图，按最新一版历史快照搬进 `Record.photoHashes`。
+    ///
+    /// **为什么必须有这一步。** `Record.photoHashes` 是 2026-09-15 新增的标量属性，
+    /// 老库里每一条记录的这个字段都是空的。不回填的话，用户升级上来看到的
+    /// 是一份**没有配图的档案** —— 图片文件都还在沙盒里，只是没人知道它们属于谁。
+    ///
+    /// **回填来源为什么是 `Revision.photoHashes`，而不是 `Photo` 关系。**
+    /// `Revision.photoHashes` 是标量数组，读它完全不碰 `Photo` 对象；
+    /// 而 `Photo` 对象正是三份崩溃日志（10:25 / 11:10 / 11:49）的共同点 ——
+    /// 见 `Record.photoHashes` 的说明。`Photo` 关系那条路**就是崩点本身**，
+    /// 拿它来回填等于把崩溃搬到启动流程的最前面。
+    ///
+    /// 精度上够用：每次内容变化都会 `save(bump:)` 插一条带 `photoHashes` 的
+    /// `Revision`（编辑器里加图、删图、换序都算内容变化），所以
+    /// 「版本号最大的那条快照」就是「最后一次保存时的配图」。
+    ///
+    /// **只做一次。** 做成每次都跑的话，用户主动清空一条记录的全部配图之后，
+    /// 下次启动会被它原样加回来 —— 那是个比「看不到图」更糟的 bug：
+    /// 用户删掉的东西自己回来了。
+    ///
+    /// 返回真正填了几条记录。
+    @MainActor
+    @discardableResult
+    static func backfillPhotoHashes(in ctx: ModelContext) -> Int {
+        let d = UserDefaults.standard
+        if d.bool(forKey: photoBackfillKey) { return 0 }
+
+        let records = (try? ctx.fetch(FetchDescriptor<Record>())) ?? []
+        guard !records.isEmpty else {
+            // 空库（新用户 / 刚挪库重建过）没什么可搬的，直接收工。
+            d.set(true, forKey: photoBackfillKey)
+            return 0
+        }
+        let revisions = (try? ctx.fetch(FetchDescriptor<Revision>())) ?? []
+
+        // 每条记录取版本号最大的那条快照。用显式比较而不是 `max(by:)`，
+        // 因为这里要的是「版本号最大」这个全序，不是「任意一个更大的」。
+        var newest: [String: Revision] = [:]
+        for v in revisions {
+            if let cur = newest[v.recordID], cur.version >= v.version { continue }
+            newest[v.recordID] = v
+        }
+
+        var filled = 0
+        for r in records where r.photoHashes.isEmpty {
+            guard let v = newest[r.id], !v.photoHashes.isEmpty else { continue }
+            r.photoHashes = Photo.uniqueHashes(v.photoHashes)
+            filled += 1
+        }
+        if filled > 0 { try? ctx.save() }
+        // **标记写在保存之后。** 反过来的话，保存失败也会被记成「搬完了」，
+        // 而那批配图就再也回不来了。
+        d.set(true, forKey: photoBackfillKey)
+        return filled
+    }
+
     static func cleanupExpiredTrash(in ctx: ModelContext) -> Int {
         let cutoff = Calendar.current.date(byAdding: .day, value: -30, to: .now) ?? .now
         let d = FetchDescriptor<Record>(predicate: #Predicate { $0.deletedAt != nil })

@@ -267,19 +267,20 @@ enum PhotoStore {
     /// 数出「还被引用的 hash 全集」。
     /// **三处都要算上**（记录配图 / 历史版本快照 / 头像）—— 少算一处就会把还在用的图删掉。
     ///
-    /// **入参是 `[Photo]`（从库里 fetch 出来的活行），不是 `[Record]`。**
-    /// 原来是 `for r in records { for p in r.photos { … } }`，那会走进 `record.photos`
-    /// 关系 —— 而关系里可能挂着「墓碑对象」（行已不在库里、却还在数组里，
-    /// 见 `HerInfoStore.repairPhotoLinks`），一读 `p.hash` 就崩在 SwiftData 内部。
+    /// **三个入参读的都是标量**：`Record.photoHashes`、`Revision.photoHashes`、
+    /// `Profile.avatarHash`。这里**一次都不碰 `Photo` 模型对象** ——
+    /// 而这个函数跑在**启动流程**里，崩了的后果不是「少清几张图」，是 **App 打不开**。
     ///
-    /// 这一步跑在**启动流程**里，所以后果不是「某条记录打不开」，而是**App 打不开**。
-    /// 换成从 `Photo` 表数：`hash` 本来就存在 Photo 行上，两边集合完全等价，
-    /// 但这一边永远安全。
-    static func referencedHashes(photos: [Photo],
+    /// 这一段换过两次写法，都是被同一个 bug 逼的：
+    ///   · 最早：`for r in records { for p in r.photos { … } }` —— 走关系，会撞墓碑；
+    ///   · 上一版：从 `Photo` 全表 fetch 再读 `p.hash` —— 看着绕开了关系，
+    ///     其实还是读 `Photo` 对象，一样会撞（11:49 那份日志崩的就是同族的写法）；
+    ///   · 现在：读标量。**判据从来不是「关系还是表」，而是「读不读那个模型对象」。**
+    static func referencedHashes(records: [Record],
                                 revisions: [Revision],
                                 avatar: String?) -> Set<String> {
         var set = Set<String>()
-        for p in photos { set.insert(p.hash) }
+        for r in records { for h in r.photoHashes { set.insert(h) } }
         for v in revisions { for h in v.photoHashes { set.insert(h) } }
         if let a = avatar, !a.isEmpty { set.insert(a) }
         return set

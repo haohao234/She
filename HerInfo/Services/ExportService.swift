@@ -71,7 +71,7 @@ final class ExportService {
     /// 目录名取 `我的宝宝江林桐-20260911-1130 配图`：与文件并排、名字对得上，
     /// 用户在「文件」里一眼看得出这两样是一起的。
     private func copyPhotos(_ records: [Record], beside fileURL: URL) {
-        let hashes = Set(records.flatMap { $0.photos.map(\.hash) })
+        let hashes = Set(records.flatMap(\.photoHashes))
         guard !hashes.isEmpty else { return }
 
         let base = fileURL.deletingPathExtension().lastPathComponent
@@ -173,8 +173,9 @@ final class ExportService {
                     body: r.body,
                     tags: r.tags,
                     photos: includePhotos
-                        ? r.photos.sorted { $0.order < $1.order }
-                                  .map { ExportPayload.Pic(hash: $0.hash, order: $0.order) }
+                        // 标量数组的下标本来就是顺序，不需要再按 `order` 排。
+                        ? r.photoHashes.enumerated()
+                                       .map { ExportPayload.Pic(hash: $0.element, order: $0.offset) }
                         : [],
                     version: r.version,
                     createdAt: r.createdAt,
@@ -219,7 +220,7 @@ final class ExportService {
                 out += "### \(r.title)\n\n"
                 if !r.body.isEmpty { out += "\(r.body)\n\n" }
                 if !r.tags.isEmpty { out += "标签：\(r.tags.joined(separator: "、"))\n\n" }
-                if !r.photos.isEmpty { out += "配图：\(r.photos.count) 张\n\n" }
+                if !r.photoHashes.isEmpty { out += "配图：\(r.photoHashes.count) 张\n\n" }
                 if includeReminders, let m = r.reminder {
                     out += "> 提醒：\(m.previewLine)\n\n"
                 }
