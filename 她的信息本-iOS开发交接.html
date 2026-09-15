@@ -1093,7 +1093,7 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
   </div>
 
   <div class="codebar">
-    <div class="t">Models.swift · 六张表（节选）</div>
+    <div class="t">Models.swift · 七张表（节选）</div>
     <button class="copybtn" data-copy="c3">复制</button>
   </div>
 <pre id="c3"><code><span class="kw">@Model final class</span> Record {
@@ -1103,8 +1103,10 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
     <span class="kw">var</span> body: String
     <span class="kw">var</span> tags: [String]
 
-    <span class="kw">@Relationship</span>(deleteRule: .cascade, inverse: \Photo.record)
-    <span class="kw">var</span> photos: [Photo] = []     <span class="cm">// 最多 9 张</span>
+    <span class="cm">// 配图的真相是**标量数组**，不是关系。最多 9 张，元素是沙盒里的 hash。</span>
+    <span class="cm">// 原先这里是一条 @Relationship ... inverse: \Photo.record —— 2026-09-15 删了，</span>
+    <span class="cm">// 原因见下面那条警告：读 Photo 对象会让 App 崩。</span>
+    <span class="kw">var</span> photoHashes: [String] = []
 
     <span class="kw">@Relationship</span>(deleteRule: .cascade, inverse: \Reminder.record)
     <span class="kw">var</span> reminder: Reminder?      <span class="cm">// 一条记录最多挂一个</span>
@@ -1137,6 +1139,19 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
     <span class="kw">case</span> shareSheet   <span class="cm">// 分享扩展</span>
     <span class="cm">// 没有、也不会有 .chat —— 留一个就等于把违规路径写进了模型</span>
 }</code></pre>
+
+  <div class="callout warn">
+    <b>⚠️ 不要把配图改回 <span class="mono-s">@Relationship</span>。</b>
+    2026-09-15 有三份真机崩溃日志，trap 地址<b>逐字节相同</b>（<span class="mono-s">SwiftData + 0x9e77c</span>）
+    而三次的调用方各不相同 —— 共同点只有一个：<b>都在读 <span class="mono-s">Photo</span> 这个模型对象</b>。
+    业务代码全部改走 <span class="mono-s">photoHashes</span> 标量之后<b>仍然崩</b>，
+    最后查到是 <span class="mono-s">deleteRule: .cascade</span> 在
+    <span class="mono-s">ctx.delete()</span> 时要把 <span class="mono-s">Photo</span> 行读出来删。
+    所以连关系声明一起删了。<br>
+    <span class="mono-s">Photo</span> 表本身保留在 schema 里（老库的数据原地放着），
+    但它现在是<b>纯历史数据</b>：没有一行代码读它，也不再是任何级联删除的出口。
+    配图的新增 / 删除 / 排序，一律改 <span class="mono-s">Record.photoHashes</span>。
+  </div>
 </section>
 
 <section id="redline">
