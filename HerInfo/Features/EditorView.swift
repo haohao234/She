@@ -86,6 +86,22 @@ struct RecordEditorView: View {
     /// 自己拿着这条引用，「新建」只会发生一次。
     @State private var created: Record?
 
+    /// 「这一屏还在不在」。
+    ///
+    /// **必须是引用类型，不能是一个 `@State` 的 `Bool`。**
+    /// 理由在 `scheduleAutoSave`：那个 0.8 秒的 Task 会**在这一屏消失之后**才醒来。
+    /// 那一刻 SwiftUI 已经不再维护这一屏的 `@Environment`（`ctx`）——
+    /// 再去读它拿到的是「没被安装过」的默认值，拿它去 `insert` / `save`
+    /// 会直接崩在 SwiftData 里（EXC_BREAKPOINT）。
+    /// 一个由 Task 自己持有（ARC 保活）的普通对象不依赖 SwiftUI 的生命周期，
+    /// 所以这里读它永远是安全的。
+    ///
+    /// `@unchecked Sendable` 是我们替编译器打的包票：它确实会被跨任务读写，
+    /// 但写的地方（`.onDisappear`）和读的地方（那个 `@MainActor` 任务）
+    /// 都在主 actor 上，不存在真的并发访问。
+    private final class Liveness: @unchecked Sendable { var alive = true }
+    @State private var live = Liveness()
+
     private var isEditing: Bool { !editingID.isEmpty }
     private var record: Record? { created ?? existing.first }
 
@@ -114,7 +130,13 @@ struct RecordEditorView: View {
             // **退回**（22 屏的撤销，见 `saveAndLeave`）。改名不动任何行为，
             // 只是让按钮说真话；三态（03 新建 / 21 起手 / 34 编辑）一起换。
             HStack {
-                Button { path.removeLast() } label: {
+                Button {
+                    // 与「完成」同一条纪律：**走之前先把挂起的自动保存掐掉。**
+                    // 少了这一句，那个 0.8 秒的任务会在这一屏没了之后才醒来，
+                    // 拿着已经失效的 `ctx` 去落盘 —— 就是导入图片后点保存闪退的现场。
+                    saveTask?.cancel()
+                    path.removeLast()
+                } label: {
                     Text("返回")
                         .font(Typo.body)
                         .foregroundStyle(C.ink2)
@@ -288,7 +310,24 @@ struct RecordEditorView: View {
                                   onReminder: { remindsMe.toggle() })
             }
         }
-        .onAppear(perform: loadIfNeeded)
+        .onAppear {
+            // 这一屏可能被复用（返回后又进来），进场要重新点亮。
+            live.alive = true
+            loadIfNeeded()
+        }
+        // **离开时先把挂起的自动保存掐掉。**
+        //
+        // 那 0.8 秒的窗口里，用户完全可能已经点了「完成」或「返回」——
+        // 这一屏没了，任务却还醒着。它醒来后去碰 `ctx`（`@Environment`）
+        // 就是「导入图片后点保存就闪退」的现场。
+        //
+        // 这一句是**兜底**：三颗出口按钮（完成 / 返回 / 手势侧滑）走的路各不相同，
+        // 而 `onDisappear` 是它们唯一共同的终点。
+        .onDisappear {
+            live.alive = false
+            saveTask?.cancel()
+            saveTask = nil
+        }
         // 自动保存：改动后 0.8s 落一次盘。
         // 用 debounce 而不是每次按键都写 —— 写库太频繁会让打字卡顿。
         .onChange(of: title) { _, _ in scheduleAutoSave() }
@@ -481,7 +520,25 @@ struct RecordEditorView: View {
     ///
     /// `bump` = 这是自动保存（编辑过程中每停 0.8 秒落一次盘）。
     /// 手动按「保存记录」时传 false —— 手动那一次不该额外再涨一版。
-    private func save(bump: Bool = false) {
+    private func save(bump: Bool = false, using context: ModelContext? = nil) {
+
+        // **这一屏已经走了就直接返回 —— 这是「导入图片后点保存就闪退」的第一道闸。**
+        //
+        // 唯一会走到这里而这一屏已经不在了的调用者，是 `scheduleAutoSave`
+        // 那个 0.8 秒的 Task：用户在这 0.8 秒里点了「完成」或「返回」，
+        // 这一屏被销毁，任务却还醒着，醒来后照样调 `save`。
+        // 那时 `self.ctx`（`@Environment`）已经随这一屏失效 ——
+        // 它读出来是「没被安装过」的默认值，拿它 `insert` / `save`
+        // 就是崩溃现场：EXC_BREAKPOINT，栈顶是 SwiftData。
+        //
+        // 放在**第一行**，因为下面每一句都可能碰 SwiftData。
+        guard live.alive else { return }
+
+        // 下面所有 `ctx.` 都落到这一份上。`context` 由 `scheduleAutoSave`
+        // 在**这一屏还活着的时候**取出来传进来 —— 它不依赖这一屏还在不在。
+        // 名字故意和属性同名：这样下面原有的 `ctx.` 一行都不用改。
+        let ctx = context ?? self.ctx
+
         let target: Record
         if let r = record {
             target = r
@@ -537,12 +594,22 @@ struct RecordEditorView: View {
             // SwiftData 会直接 fatalError（"model instance was invalidated…"），
             // 表现就是「删掉一张图再保存 → 闪退」。
             // 判成「没找到」之后会走下面的 else 插一条新的，行为也是对的。
-            if let p = target.photos.first(where: { $0.hash == h && !$0.isDeleted }) {
+            //
+            // **`!p.isDeleted` 必须写在 `p.hash` 前面，顺序不能换。**
+            // `&&` 从左往右算，而被登记删除的对象它的 backings 已经没了 ——
+            // 先读 `hash` 就是先撞上去，那道守卫等于没写。
+            // 这里栽过一次：上一版写的是 `$0.hash == h && !$0.isDeleted`。
+            if let p = target.photos.first(where: { !$0.isDeleted && $0.hash == h }) {
                 p.order = idx
             } else {
                 let p = Photo(hash: h, order: idx)
-                p.record = target
+                // **先入 context、再挂关系。**
+                // 反过来的话，`target` 已经在库里、`p` 还不在 ——
+                // 这条关系是在两个不同世界的对象之间建立的，
+                // SwiftData 对这种情况不承诺行为（它会自己决定要不要把 `p` 收进来）。
+                // 入完再挂，两边都在同一个 context 里，这条关系才是确定的。
                 ctx.insert(p)
+                p.record = target
             }
         }
 
@@ -559,6 +626,16 @@ struct RecordEditorView: View {
     /// 只有手动保存才弹。自动保存每 0.8 秒就可能落一次盘，
     /// 那个路径上弹提示会把屏幕变成闪光灯。
     private func saveAndLeave() {
+
+        // **先把挂起的自动保存掐掉，再往下走。**
+        //
+        // 它 0.8 秒后才会醒，而下面 `path.removeLast()` 一执行这一屏就没了。
+        // 醒来后它拿的是**已经销毁**的这一屏上的 `ctx`（`@Environment`）——
+        // 读出来是「没被安装过」的默认值，拿它 `save` 会直接崩在 SwiftData 里。
+        // 这一句和 `.onDisappear` 那一句是同一件事的两道保险：
+        // 这一道管「按下按钮的瞬间」，那一道管所有其它离开方式。
+        saveTask?.cancel()
+
         // 什么都没写就按「完成」（21 屏起手卡点进来又直接退出，最容易走到这里）——
         // 上面 `save` 会拒绝新建，于是**既不该留下记录，也不该弹提示**。
         // 弹「已记下」是在说一句假话：用户什么都没记。
@@ -625,8 +702,9 @@ struct RecordEditorView: View {
                                  time: time,
                                  leadMinutes: 10,
                                  message: target.title.isEmpty ? "该看看这条记录了" : target.title)
-                m.record = target
+                // 与配图同一个道理：**先入 context，再挂关系**。
                 ctx.insert(m)
+                m.record = target
                 Task { await ReminderService.shared.schedule(m) }
             }
         } else if let m = target.reminder, m.isOn {
@@ -637,16 +715,38 @@ struct RecordEditorView: View {
 
     @State private var saveTask: Task<Void, Never>?
 
+    /// 自动保存：改动后 0.8 秒落一次盘。用 debounce 而不是每次按键都写 ——
+    /// 写库太频繁会让打字卡顿。
+    ///
+    /// **这个 Task 可能比这一屏活得久，两处要一起看：**
+    ///
+    /// ① 下面那个 `guard !Task.isCancelled` 只拦得住「被取消」的，
+    ///    拦不住「这一屏已经没了、但它自己还不知道」的 —— 所以把
+    ///    `alive`（存活标记）也纳入判据。
+    ///
+    /// ② `context` 和 `alive` 都是**先取出来再进闭包**。这样闭包捕获的是
+    ///    这两个值本身，不再依赖这一屏还在不在。直接写 `self.ctx` 的话，
+    ///    任务醒来时 `@Environment` 已经随这一屏失效，读出来是
+    ///    「没被安装过」的默认值 —— 拿它 `save` 就是崩溃现场
+    ///    （EXC_BREAKPOINT，栈顶 SwiftData）。
+    ///
+    /// 现场复现：导入图片后 **0.8 秒内**点「完成」或「返回」。
+    /// 这两颗按钮的路径与 `.onDisappear` 都会把它掐掉（见下）。
     private func scheduleAutoSave() {
         saveTask?.cancel()
         saveState = .pending
-        saveTask = Task {
+
+        let context = ctx
+        let alive = live
+
+        // 用 `Task { @MainActor in }` 而不是 `Task { … await MainActor.run { … } }`：
+        // 两者等价，但前者的「整个任务」都在主 actor 上，
+        // `Task.sleep` 挂起时仍可被 `cancel()` 打断 —— 这正是我们要的那条路。
+        saveTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 800_000_000)
-            guard !Task.isCancelled else { return }
-            await MainActor.run {
-                save(bump: true)
-                saveState = .saved
-            }
+            guard !Task.isCancelled, alive.alive else { return }
+            save(bump: true, using: context)
+            saveState = .saved
         }
     }
 
