@@ -306,19 +306,47 @@ final class Reminder {
         self.isOn = isOn
     }
 
-    /// 通知正文（32 屏预览的那一行）。提前量与文案用 · 连起来 ——
-    /// 这样用户看一眼就知道「这条通知会在什么时候、说什么」。
+    /// 通知正文（32 屏「通知预览」那一行）。
+    ///
+    /// **两种方式的尾巴不一样，这一点 2026-09-15 才修对。**
+    ///   · 定时 → 提前量（「提前 10 分钟」）。它在 `scheduleDate` 里是真的：
+    ///     触发时刻会整体往前挪 10 分钟。
+    ///   · 场景 → 地点（「到公司附近」）。**场景这一路没有提前量可言** ——
+    ///     `CLCircularRegion` 是在「进入」那一刻回调的，物理上不存在「进入前 10 分钟」。
+    ///
+    /// 此前两种方式共用「提前量」那一句，后果是两件事同时错：
+    /// ① 场景提醒的通知正文会写「提前 10 分钟」，而那是做不到的事；
+    /// ② 32 屏那块预览自己另算了「到公司附近」，于是**预览里看到的话
+    ///    和真发出去的话不是同一句** —— 而「保存前先看见它长什么样」
+    ///    正是那一块存在的全部意义。
     var previewLine: String {
-        leadMinutes == 0 ? message : "\(message) · 提前 \(leadLabel)"
+        Self.makePreviewLine(kind: kind, message: message,
+                             placeName: placeName, leadMinutes: leadMinutes)
     }
 
-    var leadLabel: String {
-        switch leadMinutes {
-        case 0:          return "准时"
-        case 10:         return "10 分钟"
-        case 60:         return "1 小时"
-        case 60 * 24:    return "1 天"
-        default:         return "\(leadMinutes) 分钟"
+    /// 上面那一行的**唯一算法**。
+    ///
+    /// 做成静态纯函数是为了让编辑器里那块预览能直接调它：
+    /// 编辑态手里只有几个 `@State`、还没有 `Reminder` 对象，
+    /// 要是各写一遍，两句话迟早会分叉 —— 而它们必须是同一句。
+    static func makePreviewLine(kind: ReminderKind, message: String,
+                                placeName: String?, leadMinutes: Int) -> String {
+        if kind == .geo {
+            let p = (placeName?.isEmpty == false) ? placeName! : "某处"
+            return "\(message) · 到\(p)附近"
+        }
+        return leadMinutes == 0 ? message : "\(message) · 提前 \(leadText(for: leadMinutes))"
+    }
+
+    var leadLabel: String { Self.leadText(for: leadMinutes) }
+
+    static func leadText(for m: Int) -> String {
+        switch m {
+        case 0:           return "准时"
+        case 10:          return "10 分钟"
+        case 60:          return "1 小时"
+        case 60 * 24:     return "1 天"
+        default:          return "\(m) 分钟"
         }
     }
 }
@@ -329,13 +357,20 @@ enum ReminderKind: String, Codable, CaseIterable {
 }
 
 enum RepeatRule: String, Codable, CaseIterable {
-    case none, daily, weekly, monthly
+    // `yearly` 2026-09-15 补。**05 屏那两条例子的主力场景就是它** ——
+    // 「恋爱纪念日」与「她的生日」都是年复一年的，而此前只有
+    // 仅一次 / 每天 / 每周 / 每月 —— 也就是说设计上最要紧的那两条
+    // 只能靠「仅一次」勉强表达，第二年不会响。
+    //
+    // 加在**末尾**：rawValue 不变，已经落库的重复规则不会因为这一行而错位。
+    case none, daily, weekly, monthly, yearly
     var title: String {
         switch self {
         case .none:    return "仅一次"
         case .daily:   return "每天"
         case .weekly:  return "每周"
         case .monthly: return "每月"
+        case .yearly:  return "每年"
         }
     }
 }

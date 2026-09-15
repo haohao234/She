@@ -11,6 +11,7 @@
 
 import SwiftUI
 import SwiftData
+import UserNotifications
 
 // MARK: - 17 她的档案 · 详情
 
@@ -153,11 +154,51 @@ struct SettingsView: View {
     @Query(filter: #Predicate<Record> { $0.deletedAt != nil }) private var deleted: [Record]
     @Query(filter: #Predicate<Record> { $0.deletedAt == nil }) private var alive: [Record]
 
-    /// 通知权限的实际状态。24 屏那条「通知被关、开关却显示开」的矛盾就靠它避免。
-    @AppStorage("notifyEnabled") private var notifyEnabled = true
+    /// **通知权限的真实状态。**
+    ///
+    /// 这里此前是一个 `@AppStorage("notifyEnabled")` —— 默认 `true`，
+    /// 而**全工程没有任何地方写过它**（见 2026-09-15 那次排查）。
+    /// 于是 24 屏那条「通知被关、开关却显示开」的矛盾，
+    /// 代码里其实一次都没有被避免过 —— 那句注释是许愿，不是实现。
+    /// 现在它读系统：开关显示的就是系统里那件事的真实答案。
+    @State private var notifyStatus: UNAuthorizationStatus = .notDetermined
+
+    /// 12 屏「默认提醒时间」那一行。**它是全 App 新建提醒的时间来源** ——
+    /// 此前默认时间写死在 20:00（设计稿给的是 20:30）且无处可改，
+    /// 那正是用户报的「想修改提醒时间，发现无法修改」。
+    @State private var defaultTime = ReminderService.defaultTime
+    @State private var draftTime = ReminderService.defaultTime
+    @State private var showTimePicker = false
+
+    /// 已占用的场景点数。**缓存成 `@State`，不在 body 里现读** ——
+    /// `monitoredRegions` 是系统状态，而 body 重算很频繁；
+    /// 它只在「回到前台 / 改过场景提醒」时才可能变。
+    @State private var usedGeofences = 0
+
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.modelContext) private var ctx
+
     @AppStorage("appLock") private var appLock = false
     @AppStorage("exportNeedsFaceID") private var exportNeedsFaceID = true
     @AppStorage("themeMode") private var themeMode = "system"
+
+    /// 权限能不能发通知。`.provisional` / `.ephemeral` 也算能 ——
+    /// 判据与 `ReminderService.canNotify` 保持一致，不在这里另立一套。
+    private var notifyOn: Bool {
+        notifyStatus == .authorized || notifyStatus == .provisional || notifyStatus == .ephemeral
+    }
+
+    /// 副标题要说清楚「现在是哪一档」，而不是一律写同一句。
+    /// 尤其是 `.notDetermined`：那不是「关掉了」，是**还没问过** ——
+    /// 把这两件事写成同一句话，用户会以为是自己拒绝过。
+    private var notifyDetail: String {
+        if notifyOn { return "允许通知 · 定时与场景" }
+        switch notifyStatus {
+        case .denied:        return "已在系统设置里关闭"
+        case .notDetermined: return "还没设置过 —— 新建提醒时会问你"
+        default:             return "已关闭"
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -166,18 +207,39 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: S.cardGap) {
 
-                    // 提醒
+                    // 提醒。行的顺序照 12 屏定稿：到点提醒我 → 默认提醒时间 → 场景提醒。
+                    //
+                    // **「免打扰 22:00 – 08:00」这一行刻意没有。** 设计稿上有、
+                    // 代码里从来没有过；2026-09-15 定了「不做」，所以设计交付物
+                    // 那边也一起删掉 —— 而不是在这里留一个不生效的开关。
+                    // 一个拨了没反应的开关比没有这一行更糟：它会让人以为「我设过了」。
+                    //
+                    // 「新建提醒」那一行同样移除了：设计稿的 12 屏没有它，
+                    // 而 05 屏右上角、32 屏都已经是入口 —— 三处入口是冗余，不是周到。
                     sectionCard("提醒") {
-                        row("到点提醒我", detail: notifyEnabled ? nil : "已在系统设置里关闭",
-                            trailing: AnyView(SoftSwitch(isOn: $notifyEnabled))) {
-                            // 关掉了才引导 —— 对应 24 屏「通知权限 · 关掉之后」。
-                            // 这里以前跳的是「应用锁」，那是错的：用户的问题是通知，
-                            // 把他带到面容 ID 那一页，他只会更困惑，然后退出 App。
-                            if !notifyEnabled { path.append(.notifyDenied) }
+                        row("到点提醒我", detail: notifyDetail,
+                            trailing: AnyView(SoftSwitch(isOn: Binding(
+                                get: { notifyOn },
+                                set: { on in Task { await setNotify(on) } })))) {
+                            // 被拒状态点整行 → 去 24 屏（去系统设置那三步）。
+                            if !notifyOn { path.append(.notifyDenied) }
                         }
                         divider
-                        row("新建提醒", detail: nil, trailing: AnyView(chevron)) {
-                            path.append(.reminderNew(recordID: nil))
+                        row("默认提醒时间", detail: nil,
+                            trailing: AnyView(
+                                Text(defaultTime.hhmm)
+                                    .font(Typo.numCaptionM)
+                                    .foregroundStyle(C.ink2))) {
+                            draftTime = defaultTime
+                            showTimePicker = true
+                        }
+                        divider
+                        row("场景提醒", detail: nil,
+                            trailing: AnyView(
+                                Text("已用 \(usedGeofences) 个地点")
+                                    .font(Typo.numCaptionM)
+                                    .foregroundStyle(C.ink2))) {
+                            path.append(.reminders)
                         }
                     }
 
@@ -220,6 +282,84 @@ struct SettingsView: View {
         }
         .background(C.bg)
         .toolbar(.hidden, for: .navigationBar)
+        .task { await refreshNotify() }
+        // 从系统设置回来时要重读一次 —— 用户刚去那儿把通知打开了，
+        // 这里不重读的话开关还停在「关」上，他会以为刚才那一下没生效。
+        .onChange(of: scenePhase) { _, p in
+            guard p == .active else { return }
+            Task { await refreshNotify() }
+        }
+        .sheet(isPresented: $showTimePicker) { timePickerSheet }
+    }
+
+    /// 重读系统的通知权限与场景点占用。
+    private func refreshNotify() async {
+        notifyStatus = await ReminderService.shared.notificationStatus()
+        usedGeofences = ReminderService.shared.usedGeofences
+    }
+
+    /// 拨「到点提醒我」。
+    ///
+    /// **打开**：请求权限（只在还没问过时真会弹框），拿到「能用」之后
+    /// **立刻重排一次已有提醒** —— 不重排的话，用户在这里开了通知，
+    /// 已设的那几条要等到下次启动才排上，而他此刻的理解是「开了就该响」。
+    ///
+    /// **关闭**：带他去系统设置。从 App 里关不掉系统通知权限，
+    /// 与其让开关拨过去而权限还在（一个假的「关」），不如直接说清楚。
+    private func setNotify(_ on: Bool) async {
+        guard on else {
+            path.append(.notifyDenied)
+            return
+        }
+        let s = await ReminderService.shared.requestNotificationPermissionIfNeeded()
+        notifyStatus = s
+        guard s == .authorized || s == .provisional || s == .ephemeral else { return }
+
+        let d = FetchDescriptor<Record>(predicate: #Predicate<Record> { $0.deletedAt == nil })
+        ReminderService.shared.rescheduleAll((try? ctx.fetch(d)) ?? [])
+    }
+
+    /// 12 屏「默认提醒时间」的选择器。
+    ///
+    /// 用系统 wheel 而不是自己排一排数字：时间选择是**系统级惯例**，
+    /// 自己画一套只会让人多花两秒找「分钟在哪」。
+    private var timePickerSheet: some View {
+        VStack(spacing: 0) {
+            NavRow("默认提醒时间") {
+                Button {
+                    ReminderService.setDefaultTime(draftTime)
+                    defaultTime = draftTime
+                    showTimePicker = false
+                } label: {
+                    Text("完成")
+                        .font(Typo.pillSel)
+                        .foregroundStyle(C.primary)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(C.warm, in: Capsule(style: .continuous))
+                }
+                .pressDown()
+            }
+
+            // 只留时分：这一行回答的是「新建提醒默认定在几点」，
+            // 日期在这里没有语义（真正的日期由每条提醒自己的重复规则决定）。
+            DatePicker("", selection: $draftTime, displayedComponents: .hourAndMinute)
+                .datePickerStyle(.wheel)
+                .labelsHidden()
+                .padding(.horizontal)
+                .padding(.top, 4)
+
+            Text("新建提醒时会用这个时间，单条提醒里还能再改。")
+                .font(Typo.caption)
+                .foregroundStyle(C.ink3)
+                .padding(.horizontal, S.screen)
+                .padding(.top, 4)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+        }
+        .background(C.bg)
+        .presentationDetents([.height(320)])
+        .presentationDragIndicator(.visible)
     }
 
     private var themeModeTitle: String {

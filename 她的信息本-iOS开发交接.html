@@ -531,10 +531,10 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:26px 0;
       <div>
         <div class="nm">新建提醒 · 定时与场景 <span class="tag-x p" style="margin-left:6px">本轮新增</span></div>
         <div class="ds">
-          三处落地要点：<b>①</b>「时间」与「提前多久」是两组 —— 前者是事实（每周三 20:00），后者是你想要的余量（提前 10 分钟），混在一起用户算不清几点响。
+          四处落地要点：<b>①</b>「时间」「重复」「提前多久」是三件事 —— 「每周三 20:30」是事实，「提前 10 分钟」是你想要的余量，混在一起用户算不清几点响。提前量落到系统里就是「触发时刻 −N 分钟」。
           <b>②</b>「通知预览」是表单最后一块，保存前能看见那行字 —— 提醒的成败全在它身上。
           <b>③</b> 定时/场景整体换块，不在同一组里加可选字段（那会让表单变成一半字段是灰的）。
-          提前量落到系统里就是「触发时刻 −N 分钟」。
+          <b>④</b> <b>场景那一档收起「提前多久」</b>：围栏是在「进入那一刻」回调的，物理上不存在「进入前 10 分钟」，留着它只有「以为设上了」和「发现没用」两种结局。
         </div>
       </div>
       <div class="keys"><span class="key api">UNCalendar<br>NotificationTrigger</span><span class="key api">CLCircularRegion</span><span class="key">SwiftData</span></div>
@@ -854,8 +854,20 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:26px 0;
   <div class="callout info" style="margin-top:16px">
     <b>为什么到顶不能静默失败：</b>静默失败的表现是「设了提醒但从来不会响」——
     用户不会收到任何错误，只会某天发现错过了。所以额度检查是<b>产品需求而不是实现细节</b>，
-    它已经写进了 05 屏的界面（「已用 3 / 20」）。
+    它已经写进了 05 与 12 两处界面（「场景点已用 2 / 20」）。
   </div>
+
+  <h4 style="margin:22px 0 8px">进入场景点那一刻，通知说什么</h4>
+  <p class="lead" style="margin-bottom:12px">
+    这一条必须是<b>用户自己写的那句话</b> —— 32 屏「通知预览」承诺的就是它。
+    麻烦在于：进入那一刻 App 很可能没在运行（那正是这个功能存在的场景），
+    系统把 App 拉起来之后数据库未必就绪，而回调还在 CoreLocation 自己的线程上。
+    所以排程时要把那句话落一份纯值副本备份进 <span class="mono-s">UserDefaults</span>
+    （<span class="mono-s">hi.reminder.geoNotes</span>：提醒 id → 标题 / 正文 / 记录 id），
+    进入时只读那一份；撤提醒时把副本一起清掉，否则它每建一条就漏一份。
+    副本缺失（更早版本留下的围栏、提醒刚被删）时要退回一句<b>仍然成立</b>的话，
+    <b>不能是空字符串</b> —— 一条没有正文的通知比一句通用文案更糟。
+  </p>
 
   <h3>点开通知之后</h3>
   <p class="lead" style="margin-bottom:14px">
@@ -1124,17 +1136,24 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
 
 <span class="kw">@Model final class</span> Reminder {
     <span class="kw">var</span> kind: ReminderKind        <span class="cm">// date | geo  —— 两套 API，不是一个模型加字段</span>
-    <span class="kw">var</span> repeatRule: RepeatRule
-    <span class="kw">var</span> weekday: Int?
-    <span class="kw">var</span> time: Date
-    <span class="kw">var</span> leadMinutes: Int          <span class="cm">// 与 time 刻意分成两个字段</span>
+    <span class="kw">var</span> repeatRule: RepeatRule     <span class="cm">// 仅一次 / 每天 / 每周 / 每月 / 每年</span>
+    <span class="kw">var</span> weekday: Int?              <span class="cm">// 1 = 周日 … 7 = 周六（Calendar 的约定，不是 1 = 周一）</span>
+    <span class="kw">var</span> dayOfMonth: Int?           <span class="cm">// 每月 / 每年用的日子。**保存时必须写** ——</span>
+                                   <span class="cm">//   nil 掉的话 comps.day 缺一个字段，「每月」会退化成「每天」响</span>
+    <span class="kw">var</span> time: Date                 <span class="cm">// 时分；「仅一次 / 每月 / 每年」还从它取月日</span>
+    <span class="kw">var</span> leadMinutes: Int          <span class="cm">// 与 time 刻意分开；**场景那一档恒为 0**（没有「提前」可言）</span>
     <span class="kw">var</span> placeName: String?
     <span class="kw">var</span> latitude: Double?         <span class="cm">// 存下来，免得每次反查地理编码（那是网络请求）</span>
-    <span class="kw">var</span> longitude: Double?
+    <span class="kw">var</span> longitude: Double?        <span class="cm">// **两样都必须有**，缺一个围栏就注册不上，而界面看不出来</span>
     <span class="kw">var</span> radius: Double = 300
     <span class="kw">var</span> message: String           <span class="cm">// 32 屏「通知预览」的那一行字</span>
     <span class="kw">var</span> isOn: Bool
 }
+
+<span class="cm">// 通知正文 = previewLine，**只有一处算法**（`Reminder.makePreviewLine`）：</span>
+<span class="cm">//   · 定时 → 「正文 · 提前 10 分钟」（`scheduleDate` 真的把触发时刻往前挪了）</span>
+<span class="cm">//   · 场景 → 「正文 · 到公司附近」（围栏没有提前量，说地点）</span>
+<span class="cm">// 32 屏那块「通知预览」调的是同一个函数 —— 预览与实物必须是同一句话。</span>
 
 <span class="kw">enum</span> MoodSource: String, Codable {
     <span class="kw">case</span> manual       <span class="cm">// 09 屏快捷入口</span>
@@ -1162,7 +1181,7 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
   <div class="eyebrow">Redlines</div>
   <h2>技术红线</h2>
   <p class="lead">
-    前两条是<b>平台边界，不是技术选型建议</b>。它们直接改变了两个功能的做法，
+    前三条是<b>平台边界，不是技术选型建议</b>。它们直接改变了三个功能的做法，
     所以必须写进交接；后两条是这套设计对用户做的承诺，各需要一个真的会执行的机制兜住。
   </p>
 
@@ -1190,7 +1209,24 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
     </div>
 
     <div class="card pad">
-      <h3 style="margin:0 0 10px">③ 数据不出本机</h3>
+      <div class="chead"><h3 style="margin:0">③ 通知授权一辈子只问一次</h3><span class="tag-x p">已改设计</span></div>
+      <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0 0 10px">
+        系统只允许 App 主动弹<b>一次</b>通知授权框。用户点了「不允许」之后再调多少次
+        <span class="mono-s">requestAuthorization</span> 都不会弹，唯一出路是引导他去系统设置（24 屏）。
+        原稿只在 15 / 16 首次引导里问，而引导是「一辈子只走一次」的 ——
+        <b>装过一次的人此后永远等不到第二次询问</b>，权限停在
+        <span class="mono-s">.notDetermined</span>，所有 <span class="mono-s">add()</span> 静默失败。
+        现在改到「保存一条提醒」那一刻问（授权意愿最强的瞬间）。
+      </p>
+      <div class="callout warn">
+        <b>落地要求：</b>设置页那行开关读<b>系统真实授权状态</b>（<span class="mono-s">notificationSettings()</span>），
+        不是一个本地布尔；排不上时（没权限 / 额度满 / 没设地点）<b>必须当场说出来</b>。
+        静默失败正是「提醒从不触发」这个 bug 的成因。
+      </div>
+    </div>
+
+    <div class="card pad">
+      <h3 style="margin:0 0 10px">④ 数据不出本机</h3>
       <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0 0 10px">
         无账号、无云同步、无分析 SDK、无崩溃上报。图片落沙盒且只记 hash。
         导出的文件落「文件」App，用户能自己删。
@@ -1201,7 +1237,7 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
     </div>
 
     <div class="card pad">
-      <h3 style="margin:0 0 10px">④ 删除要能收尾</h3>
+      <h3 style="margin:0 0 10px">⑤ 删除要能收尾</h3>
       <p style="font-size:12.5px;line-height:20px;color:var(--ink2);margin:0 0 10px">
         删除是软删除，回收站留 30 天，「清空」才算真删（且要过二次确认）。
         但后台任务不保证按时执行 —— 所以清理必须是「下次打开时顺便做」。
@@ -1407,8 +1443,8 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
       <tr><td>01</td><td>首次启动</td><td>写种子数据，首页四个分类都有数、名片显示「在一起 N 天」</td></tr>
       <tr><td>02</td><td>新建记录 → 自动保存</td><td>打字 0.8s 后状态条变「已自动保存」，版本号 +1，杀掉进程重进内容还在</td></tr>
       <tr><td>03</td><td>记录配图</td><td>图片紧跟标题，<b>新建记录时就能加</b>（三态同一张字段表）；一行正好 3 个；到 9 张后添加格消失</td></tr>
-      <tr><td>04</td><td>新建提醒 → 通知到达</td><td>通知上那一行字与 32 屏「通知预览」<b>逐字一致</b>；点开直接落在那条记录</td></tr>
-      <tr><td>05</td><td>提醒提前量</td><td>设「20:00 · 提前 10 分钟」，实际是 19:50 响</td></tr>
+      <tr><td>04</td><td>新建提醒 → 通知到达</td><td>通知上那一行字与 32 屏「通知预览」<b>逐字一致</b>（定时带提前量、场景带地点）；点开直接落在那条记录</td></tr>
+      <tr><td>05</td><td>提醒提前量</td><td>设「20:30 · 提前 10 分钟」，实际是 20:20 响</td></tr>
       <tr><td>06</td><td>重启后提醒还在</td><td>杀掉进程重进，提醒仍会按时到达（启动时重排生效）</td></tr>
       <tr><td>07</td><td>深色模式</td><td>切系统深色，37 屏全部跟着变；开关的「开」态<b>不变灰</b></td></tr>
       <tr><td>08</td><td>删除与恢复</td><td>删除 → 列表消失 → 回收站能找到 → 恢复后回到原位</td></tr>
@@ -1419,6 +1455,10 @@ content.userInfo = [<span class="st">"recordID"</span>: rid]
       <tr><td>13</td><td>通知长按展开</td><td>展开后能看到配图 + 分类点 + 「第 N 版」+ 五个胶囊；<b>收起态仍是系统原生样子</b>，没有多余留白或半截胶囊</td></tr>
       <tr><td>14</td><td>锁屏打标</td><td>点一个胶囊 → 变成「已记下」；这次打标进共享收件箱，<b>下次打开 App 时写进她的档案</b>（来源 = 锁屏）· 期间 App 从未被启动</td></tr>
       <tr><td>15</td><td>分享进来</td><td>从备忘录分享三行文字 → 面板里选一个分类 → 「存下这条」；回到 App 顶部滑下「已存下分享的 1 条」，02 列表里<b>标题是第一行</b>、正文是整段。<b>先杀掉 App 再分享，记录依然落得下来</b>（扩展只丢收件箱，落库归主 App）</td></tr>
+      <tr><td>16</td><td><b>通知权限真的被问到</b></td><td>装过一个「引导早就走完」的旧包（或先删掉重装、跳过引导），然后去 05 新建一条提醒 → <b>保存那一刻系统弹出授权框</b>；允许后提醒真的会响。若之前已拒过，则保存时明确提示去 24 屏，<b>不假装设上了</b></td></tr>
+      <tr><td>17</td><td><b>改一条已有的提醒</b></td><td>05 点任意一条提醒 → 进「编辑提醒」，时间 / 重复 / 星期 / 地点 / 半径 / 文案<b>全部带着现值</b>；只改时间再保存，其余字段一个不变（尤其场景提醒的坐标不能被清掉）</td></tr>
+      <tr><td>18</td><td><b>场景提醒真的会响</b></td><td>设「到公司 · 300 米」并<b>采到坐标</b>；走进那个圈 → 收到通知，正文是<b>你写的那句话 · 到公司附近</b>；点开落在那条记录。<b>没取坐标时保存会被拦住</b>，而不是留下一条永远不响的提醒</td></tr>
+      <tr><td>19</td><td><b>每月 / 每年</b></td><td>设「每月 13 号」只在 13 号响（不是每天）；设「每年 11 月 2 日」只在每年那一天响。两者都可改——「每周」能改是星期几，「每月 / 每年」的日子在时间选择器里改</td></tr>
     </tbody>
   </table>
 

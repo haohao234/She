@@ -21,6 +21,7 @@ enum Route: Hashable {
     case sortPin                      // 25 排序与置顶
     case reminders                    // 05 提醒 · 定时与场景
     case reminderNew(recordID: String?)  // 32 新建提醒（新）
+    case reminderEdit(recordID: String)  // 32 编辑已有提醒（05 点条目进来的那条路）
     case search                       // 04 搜索 · 全局查找
     case recordDetail(id: String)     // 31 记录详情
     case versionHistory(id: String)   // 07 历史版本 · 左右对比（新）
@@ -42,6 +43,11 @@ struct RootView: View {
     @State private var tab: HomeTab = .home
     @State private var path: [Route] = []
     @Environment(\.modelContext) private var ctx
+
+    /// 上一次看到的「通知能不能发」。用来判断**这次回前台是不是刚被打开** ——
+    /// 只有「false → true」那一次才值得重排，见 `rescheduleAfterPermissionChange()`。
+    /// 显式写 `= nil`：它同时表示「还不知道」，而未知不该被当成「不能发」。
+    @State private var lastNotifyOn: Bool? = nil
 
     /// 15 / 16 两屏首次使用走完没有。
     /// **用 `@AppStorage` 而不是查「有没有 Profile」** —— 用户完全可能在
@@ -105,11 +111,33 @@ struct RootView: View {
         .task {
             // 冷启动：按当前设置决定要不要立刻锁。
             if hasOnboarded && appLock { locked = true }
+            // 记下起来那一刻的权限状态 —— 它是后面「有没有变化」的基准。
+            // 不记的话，用户第一次从系统设置切回来时 `lastNotifyOn` 是 nil，
+            // 而 nil 不等于 false，那次该做的重排就会被漏掉。
+            lastNotifyOn = await ReminderService.shared.canNotify()
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             if hasOnboarded && appLock { locked = true }
+            Task { await rescheduleAfterPermissionChange() }
         }
+    }
+
+    /// 权限从「发不出去」变成「能发」的那一次，**重排一遍已有提醒**。
+    ///
+    /// 用户被引导去系统设置打开通知，再切回来 —— 如果这里不重排，
+    /// 已设的那几条要等到**下一次冷启动**才排上，而他此刻的理解是
+    /// 「我刚开了通知，它就该响了」。这个空档足够让他再报一次「提醒不响」。
+    ///
+    /// 只在**变化**的那一次排：每次回前台都全量重排会让「刚切出去又切回来」
+    /// 变成一次没必要的全表扫描 + N 次 `add()`。
+    private func rescheduleAfterPermissionChange() async {
+        let on = await ReminderService.shared.canNotify()
+        defer { lastNotifyOn = on }
+        guard on, lastNotifyOn == false else { return }
+
+        let d = FetchDescriptor<Record>(predicate: #Predicate<Record> { $0.deletedAt == nil })
+        ReminderService.shared.rescheduleAll((try? ctx.fetch(d)) ?? [])
     }
 
     private var mainStack: some View {
@@ -153,6 +181,11 @@ struct RootView: View {
                     ReminderListView(path: $path)
                 case .reminderNew(let rid):
                     ReminderEditorView(path: $path, recordID: rid)
+                case .reminderEdit(let rid):
+                    // **同一个 `ReminderEditorView`，只是标题不同。**
+                    // 不另写一屏「编辑提醒」：那一屏的字段、校验、通知预览
+                    // 与新建态逐项相同，分成两个文件只会让以后改文案的人漏掉一半。
+                    ReminderEditorView(path: $path, recordID: rid, isEditing: true)
                 case .search:
                     // 被 push 上来时，「取消」= 退回上一层。
                     SearchView(path: $path, onCancel: { path.removeLast() })
@@ -190,6 +223,16 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .reminderDone)) { note in
             guard let mid = note.object as? String else { return }
             HerInfoStore.markReminderDone(reminderID: mid, in: ctx)
+        }
+        // 「这条提醒排不上」—— **把原因直接说出来。**
+        //
+        // 这一段是本轮补的关键一环：此前所有失败路径都是静默的
+        // （`try?` 或裸 `return`），于是「提醒不响」在用户那边没有任何信息 ——
+        // 他既不知道是权限问题、额度问题，还是自己压根没设过地点，
+        // 只能得出一个笼统的结论：「这个功能是坏的」。
+        .onReceive(NotificationCenter.default.publisher(for: .reminderCannotSchedule)) { note in
+            guard let reason = note.object as? String else { return }
+            ToastCenter.shared.show(reason)
         }
     }
 }
@@ -754,36 +797,29 @@ struct ReminderListView: View {
             }
 
             ScrollView {
-                VStack(spacing: S.innerGapL) {
-                    ForEach(records.compactMap(\.reminder)) { m in
-                        SCard {
-                            HStack(spacing: 10) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(m.kind == .date ? "定时 · \(m.time.hhmm)" : "场景 · \(m.placeName ?? "")")
-                                        .font(Typo.numCaptionM)
-                                        .foregroundStyle(C.primary)
-                                    Text(m.message)
-                                        .font(Typo.bodyS)
-                                        .foregroundStyle(C.ink)
-                                    Text(m.previewLine)
-                                        .font(Typo.caption)
-                                        .foregroundStyle(C.ink3)
-                                }
-                                Spacer(minLength: 0)
-                                // 以前这里是 `.constant(m.isOn)` —— 一个永远不动的常量绑定。
-                                // 表现是「开关看得见、拨不动」，而且拨了也不会重排通知。
-                                SoftSwitch(isOn: Binding(
-                                    get: { m.isOn },
-                                    set: { on in
-                                        m.isOn = on
-                                        try? ctx.save()
-                                        Task {
-                                            if on { await ReminderService.shared.schedule(m) }
-                                            else  { await ReminderService.shared.cancel(m) }
-                                        }
-                                    }))
-                            }
-                        }
+                VStack(alignment: .leading, spacing: S.innerGapL) {
+
+                    // 分组标题照 05 屏定稿。**分两块不是为了好看** ——
+                    // 「定时」与「场景」是两种心智（到点响 / 到地方响），
+                    // 混在一列里，用户会以为是自己设的那个时间坏了。
+                    if !dateReminders.isEmpty {
+                        groupLabel("定时提醒 · 按日期")
+                        ForEach(dateReminders) { reminderCard($0) }
+                    }
+
+                    if !geoReminders.isEmpty {
+                        // 组标题说「地方」不说「时候」：这个功能在 iOS 上能做的
+                        // 只有「到某个地点就提醒」。「见到她」「她情绪低落」那类
+                        // 触发点系统给不了 —— 见 `ReminderEditorView.presetPlaces`。
+                        groupLabel("场景提醒 · 到了这些地方主动提醒我")
+                        ForEach(geoReminders) { reminderCard($0) }
+                    }
+
+                    if reminders.isEmpty {
+                        Text("还没有提醒。记下一条在意的事，再给它定个时间。")
+                            .font(Typo.caption)
+                            .foregroundStyle(C.ink3)
+                            .padding(.horizontal, 4)
                     }
                 }
                 .padding(.horizontal, S.screen)
@@ -792,6 +828,86 @@ struct ReminderListView: View {
         }
         .background(C.bg)
         .toolbar(.hidden, for: .navigationBar)
+    }
+
+    // MARK: 列表
+
+    private var reminders: [Reminder] { records.compactMap(\.reminder) }
+    private var dateReminders: [Reminder] { reminders.filter { $0.kind == .date } }
+    private var geoReminders:  [Reminder] { reminders.filter { $0.kind == .geo } }
+
+    private func groupLabel(_ t: String) -> some View {
+        Text(t)
+            .font(Typo.captionM)
+            .foregroundStyle(C.ink3)
+            .padding(.horizontal, 4)
+    }
+
+    private func reminderCard(_ m: Reminder) -> some View {
+        SCard {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(m.kind == .date
+                         ? "定时 · \(m.time.hhmm)"
+                         : "场景 · 到「\(m.placeName ?? "某处")」附近")
+                        .font(Typo.numCaptionM)
+                        .foregroundStyle(C.primary)
+                    Text(m.message)
+                        .font(Typo.bodyS)
+                        .foregroundStyle(C.ink)
+                    if let detail = detailLine(m) {
+                        Text(detail)
+                            .font(Typo.caption)
+                            .foregroundStyle(C.ink3)
+                    }
+                }
+                Spacer(minLength: 0)
+                // 以前这里是 `.constant(m.isOn)` —— 一个永远不动的常量绑定。
+                // 表现是「开关看得见、拨不动」，而且拨了也不会重排通知。
+                SoftSwitch(isOn: Binding(
+                    get: { m.isOn },
+                    set: { on in
+                        m.isOn = on
+                        try? ctx.save()
+                        Task {
+                            if on { await ReminderService.shared.schedule(m) }
+                            else  { await ReminderService.shared.cancel(m) }
+                        }
+                    }))
+            }
+        }
+        // **整张卡可点进编辑。**
+        //
+        // 此前这里没有任何入口 —— 05 屏是所有提醒的列表页，而条目一个都点不动，
+        // `Route` 里也只有「新建」。于是用户看得见那条提醒，
+        // 却没有任何一条路能走进去改它，那正是「想修改提醒时间，发现无法修改」。
+        //
+        // `contentShape` 不能省：SCard 的内容在纵向是「文字多高就多高」，
+        // 不铺满卡片时点在空白处不响应，而空白处恰恰占了大半张卡。
+        // 开关那一下不会走到这里 —— `SoftSwitch` 内层有自己的手势，先响应。
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard let rid = m.record?.id else {
+                // 提醒理论上都挂在记录上。真出现悬空的要如实说一句 ——
+                // 静默什么都不发生，用户只会以为「点不动」。
+                ToastCenter.shared.show("这条提醒没有关联的记录，删掉重建一条")
+                return
+            }
+            path.append(.reminderEdit(recordID: rid))
+        }
+    }
+
+    /// 卡片第三行。**只在它比正文多说了点什么时才返回值。**
+    ///
+    /// 两个理由，都是「同一句话在卡上出现两遍」：
+    ///   · 定时 + 准时：`previewLine` 就等于正文本身，照画会印两遍；
+    ///   · 场景：「到哪儿」第一行那个「场景 · 到「公司」附近」已经说过了，
+    ///     所以这一档改成说范围 —— 那才是它多余的信息。
+    private func detailLine(_ m: Reminder) -> String? {
+        let s = m.kind == .geo
+            ? "进入 \(Int(m.radius)) 米范围时提醒"
+            : m.previewLine
+        return s == m.message ? nil : s
     }
 }
 
