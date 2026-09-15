@@ -322,7 +322,8 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:26px 0;
 │   │   └─ ShareContract.swift        <span class="cm">// 分享契约：它引用上面的 App Group，不重写那个字符串</span>
 │   ├─ DesignSystem/
 │   │   ├─ Tokens.swift           <span class="cm">// 16 个令牌 × 浅深两档 + 字体 + 圆角 + 间距 + 投影</span>
-│   │   └─ Components.swift       <span class="cm">// 14 个组件：SCard / Pill / SoftSwitch / SegmentControl …</span>
+│   │   ├─ Components.swift       <span class="cm">// 14 个组件：SCard / Pill / SoftSwitch / SegmentControl …</span>
+│   │   └─ PhotoViewer.swift      <span class="cm">// 配图全屏预览：盖在 NavigationStack 之上的那一层（见「组件库」）</span>
 │   ├─ Models/
 │   │   └─ Models.swift           <span class="cm">// SwiftData：Record / Photo / Profile / Reminder / Mood / Revision</span>
 │   ├─ Features/
@@ -337,7 +338,10 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:26px 0;
 │   │   └─ SecondaryViews.swift   <span class="cm">// 17 / 12 / 23 / 13 / 27</span>
 │   └─ Services/
 │       ├─ ReminderService.swift  <span class="cm">// 本地通知 + 地理围栏（含 20 个区域上限）</span>
-│       └─ ExportService.swift    <span class="cm">// PDF / Markdown / JSON 三种真导出</span>
+│       ├─ PhotoStore.swift       <span class="cm">// 配图落盘层：全 App 唯一的「图片文件 ↔ hash」出口（内容寻址）</span>
+│       ├─ ExportService.swift    <span class="cm">// PDF / Markdown / JSON 三种真导出</span>
+│       ├─ LaunchGuard.swift      <span class="cm">// 启动守门：连续启动失败 → 保守启动 → 挪库重建（最坏也点得开）</span>
+│       └─ CycleService.swift     <span class="cm">// 生理期推算（37~41 屏）</span>
 │
 ├─ HerInfoNotification/           <span class="cm">// 通知内容扩展：独立 target、独立进程、独立 Info.plist</span>
 │   ├─ NotificationViewController.swift <span class="cm">// 入口：取通知、读系统搬来的附件、把点击转发给主 App</span>
