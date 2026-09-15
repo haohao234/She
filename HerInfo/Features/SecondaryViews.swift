@@ -325,7 +325,10 @@ struct SettingsView: View {
     /// 自己画一套只会让人多花两秒找「分钟在哪」。
     private var timePickerSheet: some View {
         VStack(spacing: 0) {
-            NavRow("默认提醒时间") {
+            // ⚠️ 同 32 屏那张表：不传 `onBack` 时**必须写 `trailing:`** ——
+            // 不写标签的尾随闭包会走「向后匹配」，Swift 6 已弃用，
+            // 而流水线有 warning 就红。
+            NavRow("默认提醒时间", trailing: {
                 Button {
                     ReminderService.setDefaultTime(draftTime)
                     defaultTime = draftTime
@@ -338,7 +341,7 @@ struct SettingsView: View {
                         .background(C.warm, in: Capsule(style: .continuous))
                 }
                 .pressDown()
-            }
+            })
 
             // 只留时分：这一行回答的是「新建提醒默认定在几点」，
             // 日期在这里没有语义（真正的日期由每条提醒自己的重复规则决定）。

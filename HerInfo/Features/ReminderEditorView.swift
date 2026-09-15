@@ -484,7 +484,12 @@ struct ReminderEditorView: View {
     /// 时间是系统级惯例，自己排一排数字只会让人多花两秒找「分钟在哪」。
     private var timePickerSheet: some View {
         VStack(spacing: 0) {
-            NavRow("提醒时间") {
+            // ⚠️ 这一行**必须写 `trailing:`**。`NavRow` 的参数是
+            // `(_ title:, onBack: = nil, @ViewBuilder trailing:)` —— 这里不传 `onBack`，
+            // 于是「不写标签的尾随闭包」只能靠**向后匹配**落到 `trailing` 上，
+            // Swift 6 已把那条路标成 deprecation warning，
+            // 而本工程的流水线**有 warning 就红**（2026-09-15 实测：就是这么红的一次）。
+            NavRow("提醒时间", trailing: {
                 Button {
                     time = draftTime
                     showTimePicker = false
@@ -496,7 +501,7 @@ struct ReminderEditorView: View {
                         .background(C.warm, in: Capsule(style: .continuous))
                 }
                 .pressDown()
-            }
+            })
 
             // 选择器给不给日期，随「重复」那一排而定 —— 见 `timePicksDate`。
             DatePicker("", selection: $draftTime,
