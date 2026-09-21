@@ -136,6 +136,145 @@ final class ReminderService: NSObject {
         }
     }
 
+    // MARK: - 「打开 App 的时候补发」（24 屏「没有通知也不会漏」的第一条）
+
+    /// 「上次翻过提醒」的水位线。
+    ///
+    /// **为什么是一条水位线、而不是给每条提醒记「看过了没有」**：
+    /// 用户要的是「我上次看过之后，哪些响过了」—— 那是一个**时间区间**问题，
+    /// 不是 N 个布尔值。每条记一个已读位，就得回答「什么时候把它翻回未读」，
+    /// 而这个问题没有好答案。水位线只有一个数字，语义也就一条：
+    /// **比它晚发生的都还没跟你说过。**
+    ///
+    /// 存 `UserDefaults` 不存库里：它描述的是「这台设备这个人看到哪儿了」，
+    /// 不是提醒本身的属性 —— 换台设备重来一遍才对，同步过去反而错。
+    ///
+    /// ⚠️ **四个都是 `nonisolated`**：`ReminderService` 整体是 `@MainActor`，
+    /// 而这几个函数只碰 `UserDefaults` 与传进来的值，不看任何实例状态。
+    /// 不放开的话，`MissedReminders`（不能是 `@MainActor`，见那边的注释）
+    /// 就够不到它们 —— 那会逼着把一个纯函数拖进主 actor。
+    nonisolated static let seenAtKey = "hi.reminder.seenAt"
+
+    /// 从未看过时返回 nil —— **调用方必须把 nil 当成「就是现在」**。
+    /// 不这么处理的话，第一次装上 App 就会看到一屏「N 条提醒已过期」，
+    /// 而用户昨天根本还没用这个 App。
+    nonisolated static func seenAt() -> Date? {
+        let t = UserDefaults.standard.double(forKey: seenAtKey)
+        return t == 0 ? nil : Date(timeIntervalSince1970: t)
+    }
+
+    /// 把水位线推到现在。**只能在「已经算完、并且已经呈现给用户」之后调** ——
+    /// 先标后算的话，那一屏永远是空的（这正是要写在注释里的那种顺序陷阱）。
+    nonisolated static func markSeen(at date: Date = .now) {
+        UserDefaults.standard.set(date.timeIntervalSince1970, forKey: seenAtKey)
+    }
+
+    /// 一条**定时**提醒「最近一次该响的时刻」。
+    ///
+    /// 与 `scheduleDate` 里的 `makeComps` 是同一套规则的**反向求解**：
+    /// 那边问「下一次什么时候响」，这里问「上一次是什么时候响的」。
+    /// 两处必须一起改 —— 只改一边，就会出现「系统按新规则排、过期判定按旧规则算」，
+    /// 用户看到的条数跟实际响过的对不上。
+    ///
+    /// 返回的已经是**扣掉提前量之后的时刻**：用户感知的「该响」是
+    /// 「20:00 提前 10 分钟」= 19:50，判过期要按 19:50 算。
+    nonisolated static func mostRecentFire(_ r: Reminder, now: Date = .now) -> Date? {
+        guard r.kind == .date, r.isOn else { return nil }
+        let cal = Calendar.current
+        let h = cal.component(.hour, from: r.time)
+        let m = cal.component(.minute, from: r.time)
+        let anchorDay = cal.component(.day, from: r.time)
+
+        /// 把「某天某时某分」造出来；那一天不存在（比如 2 月没有 31 号）就返回 nil。
+        func at(_ y: Int, _ mo: Int, _ d: Int) -> Date? {
+            cal.date(from: DateComponents(year: y, month: mo, day: d, hour: h, minute: m))
+        }
+        /// 从 `start` 往前数 `back` 个月那一版。
+        /// **那一天在这个月不存在就返回 nil** —— 与系统一致（`day = 31` 在 2 月就是跳过），
+        /// 不能把它夹到 28 号：那会凭空多出一条「已过期」。
+        func monthStepsBack(_ start: Date, _ back: Int) -> Date? {
+            guard let firstOfThisMonth = cal.date(from: cal.dateComponents([.year, .month], from: start)),
+                  let target = cal.date(byAdding: .month, value: -back, to: firstOfThisMonth),
+                  let days = cal.range(of: .day, in: .month, for: target)?.count else { return nil }
+            let d = r.dayOfMonth ?? anchorDay
+            guard d <= days else { return nil }
+            return at(cal.component(.year, from: target), cal.component(.month, from: target), d)
+        }
+
+        // ⚠️ **每一种规则都要处理「今天这一刻还没到」**：那时「最近一次」是上一个周期。
+        // 少了这一层，早上 10 点看一条 20:30 的提醒会算出 nil，
+        // 于是昨天那一次被漏掉 —— 而它正是最该被补上的那一次。
+        let day: Date?
+        switch r.repeatRule {
+        case .daily:
+            guard var d = cal.date(bySettingHour: h, minute: m, second: 0, of: now) else { return nil }
+            if d > now { d = cal.date(byAdding: .day, value: -1, to: d) ?? d }
+            day = d
+
+        case .weekly:
+            guard let wd = r.weekday,
+                  var d = cal.date(bySettingHour: h, minute: m, second: 0, of: now) else { return nil }
+            let delta = (cal.component(.weekday, from: d) - wd + 7) % 7
+            d = cal.date(byAdding: .day, value: -delta, to: d) ?? d
+            if d > now { d = cal.date(byAdding: .day, value: -7, to: d) ?? d }
+            day = d
+
+        case .monthly:
+            // 「每月」最多往回找 13 个月就一定能撞上（12 个月一轮 + 兜一次）。
+            var found: Date? = nil
+            for back in 0...13 {
+                guard let cand = monthStepsBack(now, back), cand <= now else { continue }
+                found = cand
+                break
+            }
+            day = found
+
+        case .yearly:
+            // 往回最多找 4 年 —— 2 月 29 号那种日子得跨到下一个闰年才存在。
+            let mo = cal.component(.month, from: r.time)
+            let d = r.dayOfMonth ?? anchorDay
+            let y = cal.component(.year, from: now)
+            var found: Date? = nil
+            for back in 0...4 {
+                if let cand = at(y - back, mo, d), cand <= now { found = cand; break }
+            }
+            day = found
+
+        case .none:
+            // 「仅一次」只有一个点，就是它自己。
+            day = r.time
+        }
+
+        guard var fire = day, fire <= now else { return nil }
+        // 提前量：系统按 `fire − lead` 响，判过期也按那个时刻。
+        if r.leadMinutes > 0 {
+            fire = fire.addingTimeInterval(-Double(r.leadMinutes) * 60)
+        }
+        return fire
+    }
+
+    /// 「你没打开 App 的时候响过、但你还没被告知」的那几条。
+    ///
+    /// 这就是 24 屏那句「打开 App 的时候补发 —— 一进来就能看到「2 条提醒已过期」」。
+    /// **它不是把通知重发一遍**（通知早过了，重发只会更假），
+    /// 而是把这几条**摆到眼前**：界面照条数说话，点一条就能改时间或关掉。
+    ///
+    /// 顺带一提，这条兜底**不依赖通知权限**：手机没电、静音、专注模式、
+    /// 甚至用户压根没开通知 —— 只要那件事该响而没被看见，它就该出现在这里。
+    /// 之前的实现只在「权限被拒」那条路上做文章，漏掉了更大的那一类。
+    nonisolated static func missed(_ records: [Record], now: Date = .now) -> [Reminder] {
+        // 没有水位线 = 第一次用，不翻旧账。
+        guard let seen = seenAt() else { return [] }
+        return records
+            .compactMap(\.reminder)
+            .filter { r in
+                guard let fire = mostRecentFire(r, now: now) else { return false }
+                return fire > seen
+            }
+            .sorted { (mostRecentFire($0, now: now) ?? .distantPast)
+                    > (mostRecentFire($1, now: now) ?? .distantPast) }
+    }
+
     // MARK: - 取一次当前位置
 
     /// 取当前位置的坐标。
@@ -530,10 +669,38 @@ final class ReminderService: NSObject {
     }
 }
 
+// MARK: - 「打开 App 的时候补发」的那一批（24 屏）
+
+/// 「你还没被告知的那几条过期提醒」——**起 App 时定格一次，用户看过 05 屏才清掉**。
+///
+/// 为什么要一个单例，而不是每个视图各自现算：
+/// ① 首页那一格要跟 05 屏说同一个数字；② 数字一旦算出来，就得**稳定到用户走开为止**——
+///    现算的话，打开 05 屏的瞬间水位线被推进，banner 会在用户眼皮底下消失。
+/// 「定格一次 + 显式 `acknowledge()`」是唯一能让「算」与「标」都不打架的分工。
+///
+/// ⚠️ **刻意不加 `@MainActor`** —— 与 `ToastCenter` 同一个理由（见它的注释）：
+/// 视图里写 `@ObservedObject private var x = MissedReminders.shared` 时，
+/// 属性初始化器落在**非隔离**上下文里、不继承 `body` 的隔离，加 `@MainActor`
+/// 会一路带出警告，而这条流水线**有 warning 就红**。它的方法本来就只在主线程调。
+final class MissedReminders: ObservableObject {
+    static let shared = MissedReminders()
+    private init() {}
+
+    @Published private(set) var items: [Reminder] = []
+
+    /// 冷启动 / 回前台时调。**先算、后标** —— 顺序反了的话恒为空。
+    func refresh(records: [Record]) {
+        items = ReminderService.missed(records)
+        ReminderService.markSeen()
+    }
+
+    /// 用户离开了「提醒」那一屏 —— 这一批算告知完毕。
+    func acknowledge() { items = [] }
+}
+
 // MARK: - 通知到达
 
 extension ReminderService: UNUserNotificationCenterDelegate {
-
     /// 前台也显示。这个 App 的通知不是「打扰」，是它存在的意义 ——
     /// 用户很可能正开着它等这条提醒。
     nonisolated func userNotificationCenter(

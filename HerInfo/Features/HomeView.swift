@@ -26,6 +26,16 @@ enum Route: Hashable {
     case recordDetail(id: String)     // 31 记录详情
     case versionHistory(id: String)   // 07 历史版本 · 左右对比（新）
     case recordEdit(id: String)       // 34 记录配图（新）
+    /// 03 新建记录。**它和 `recordEdit` 是两条不同的路，别再合并回去。**
+    ///
+    /// 差别只有一个：**分类要不要从来源屏带过来**。
+    /// 2026-09-21 修掉的缺陷就长在这里 —— 原来新建复用了
+    /// `recordEdit(id: "")`，而那条路只带一个 id，分类落在编辑器的
+    /// 默认值「喜好」上。结果是「在『讨厌的事』那一屏点＋记一条，
+    /// 存下来跑到『喜好』里」，而用户完全看不出自己哪一步做错了。
+    ///
+    /// 编辑一条已有的记录不需要这个参数 —— 分类从那条记录本身读。
+    case recordNew(cat: Category)     // 03 新建记录（分类继承来源屏）
     case starterEdit(topic: String)   // 21 首条记录引导 · 预填好的编辑器（新）
     case trash                        // 27 回收站
     case exportArchive                // 35 导出档案（新）
@@ -37,12 +47,25 @@ enum Route: Hashable {
 
 // MARK: - 容器
 
-/// 四个 tab + 底部胶囊导航。
-/// **只有 4 个 tab** —— 设置不在这里，它是从首页右上角压进来的一页。
+/// 五个 tab + 底部胶囊导航。
+/// **顺序就是 `HomeTab` 里 case 的顺序**（首页 / 生理期 / 分类 / 搜索 / 提醒）。
+/// 设置不在这里，它是从首页右上角压进来的一页。
 struct RootView: View {
     @State private var tab: HomeTab = .home
     @State private var path: [Route] = []
     @Environment(\.modelContext) private var ctx
+
+    /// 02 屏当前在看哪一类。
+    ///
+    /// **它是「分类」这个 tab 的状态，所以归容器拿着，不归 `BrowseView` 自己。**
+    /// 两个原因：
+    /// ① 01 首页那四张分类卡点下去要能**切到那一类并进 02**
+    ///    （此前它接的是 `path.append(.search)` —— 点「讨厌的事」进的是搜索页，
+    ///    与画布上那四张卡的意思完全对不上）；
+    /// ② 从 02 点「＋」新建时，要能把**当前这一类**带进编辑器 ——
+    ///    这是 2026-09-21 那个「记讨厌的事存成喜好」缺陷的另一半。
+    /// 状态放在容器里，这两条路就都只是读它一下。
+    @State private var browseCat: Category = .like
 
     /// 上一次看到的「通知能不能发」。用来判断**这次回前台是不是刚被打开** ——
     /// 只有「false → true」那一次才值得重排，见 `rescheduleAfterPermissionChange()`。
@@ -115,12 +138,26 @@ struct RootView: View {
             // 不记的话，用户第一次从系统设置切回来时 `lastNotifyOn` 是 nil，
             // 而 nil 不等于 false，那次该做的重排就会被漏掉。
             lastNotifyOn = await ReminderService.shared.canNotify()
+            refreshMissedReminders()
         }
         .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             if hasOnboarded && appLock { locked = true }
             Task { await rescheduleAfterPermissionChange() }
+            // 回前台也算一次「刚打开」：手机在兜里放了一晚上，
+            // 那期间该响的提醒和冷启动那一刻的处境没有区别。
+            refreshMissedReminders()
         }
+    }
+
+    /// 24 屏「没有通知也不会漏」的第一条兜底：**打开 App 的时候补发**。
+    ///
+    /// 放在容器层而不是首页里：它是「App 起来时做一次的事」，不是「首页渲染时做的事」——
+    /// 挂在首页上的话，切到别的 tab 再切回来就会重算一遍，
+    /// 而那时水位线早就推过了，算出来永远是 0（数字当着用户的面跳掉）。
+    private func refreshMissedReminders() {
+        let d = FetchDescriptor<Record>(predicate: #Predicate<Record> { $0.deletedAt == nil })
+        MissedReminders.shared.refresh(records: (try? ctx.fetch(d)) ?? [])
     }
 
     /// 权限从「发不出去」变成「能发」的那一次，**重排一遍已有提醒**。
@@ -147,8 +184,16 @@ struct RootView: View {
 
                 Group {
                     switch tab {
-                    case .home:     HomeView(path: $path)
-                    case .category: BrowseView(path: $path)
+                    case .home:
+                        // 01 的四张分类卡：点哪一张就**切到那一类并进 02**。
+                        // 走一个闭包而不是往 `path` 里塞一条路 —— 目标不是一个
+                        // 「压上来的二级页」，是**换一个 tab**，两者在
+                        // 返回手势与底栏高亮上的表现完全不同。
+                        HomeView(path: $path, onOpenCategory: { c in
+                            browseCat = c
+                            tab = .category
+                        })
+                    case .category: BrowseView(path: $path, cat: $browseCat)
                     // 生理期**不做成 push 出去的二级页**，而是一个平级 tab ——
                     // 它是要「经常看一眼」的东西（还有几天、是不是正好在经期），
                     // 藏在两级菜单后面，这个「看一眼」就发生了。
@@ -194,7 +239,12 @@ struct RootView: View {
                 case .versionHistory(let id):
                     VersionHistoryView(path: $path, recordID: id)
                 case .recordEdit(let id):
+                    // 34 屏：改一条已有的记录。分类从记录本身读，不需要带。
                     RecordEditorView(path: $path, editingID: id, starterID: "")
+                case .recordNew(let c):
+                    // 03 屏：新建。`newCat` 就是「你在哪一屏点的＋」。
+                    RecordEditorView(path: $path, editingID: "", starterID: "",
+                                     newCat: c)
                 case .starterEdit(let topic):
                     RecordEditorView(path: $path, editingID: "", starterID: topic)
                 case .trash:
@@ -242,11 +292,22 @@ struct RootView: View {
 struct HomeView: View {
     @Binding var path: [Route]
 
+    /// 四张分类卡被点。**走闭包，不往 `path` 里塞一条路** ——
+    /// 那四张卡的去向是「切到分类 tab 并选中这一类」，
+    /// 不是「压一个二级页上来」。两件事在返回手势与底栏高亮上完全不同。
+    ///
+    /// 默认空实现，好让预览与其它调用点不必都写一遍。
+    var onOpenCategory: (Category) -> Void = { _ in }
+
     @Query(filter: #Predicate<Record> { $0.deletedAt == nil },
            sort: \Record.updatedAt, order: .reverse)
     private var records: [Record]
 
     @Query private var profiles: [Profile]
+
+    /// 「N 条提醒已过期」那一格的数据源。**阅读它，不自己算** ——
+    /// 算的动作在 `RootView`（起 App / 回前台各一次），见 `refreshMissedReminders`。
+    @ObservedObject private var missedStore = MissedReminders.shared
 
     /// 「记录第 128 天」= 从第一次打开算起。存首次启动时间，不存天数 ——
     /// 存下来的数字过一夜就是错的。
@@ -268,6 +329,8 @@ struct HomeView: View {
     private var nextReminder: Reminder? {
         records.compactMap(\.reminder).filter(\.isOn).first
     }
+
+    private var missedCount: Int { missedStore.items.count }
 
     var body: some View {
         ScrollView {
@@ -363,6 +426,32 @@ struct HomeView: View {
                     .pressDown()
                 }
 
+                // 24 屏「打开 App 的时候补发」在首页的这一格。
+                //
+                // 为什么不并进下面那条「最近的提醒」：那条讲的是**下一件要发生的事**，
+                // 这条讲的是**已经过去、还没被看见的事**。一个是前瞻、一个是回补，
+                // 混成一条的话，用户看到「恋爱纪念日」会以为它还没到。
+                if missedCount > 0 {
+                    Button { path.append(.reminders) } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "clock.badge.exclamationmark")
+                                .font(.system(size: 14))
+                                .foregroundStyle(C.primary)
+                            Text("\(missedCount) 条提醒已过期")
+                                .font(Typo.numCaptionM)
+                                .foregroundStyle(C.primary)
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(C.primary)
+                        }
+                        .padding(.horizontal, 14)
+                        .frame(height: 44)
+                        .background(C.warm, in: Capsule(style: .continuous))
+                    }
+                    .pressDown()
+                }
+
                 // 最近的提醒
                 if let m = nextReminder {
                     Button { path.append(.reminders) } label: {
@@ -413,7 +502,7 @@ struct HomeView: View {
                               spacing: 12) {
                         ForEach(Category.allCases) { cat in
                             Button {
-                                path.append(.search)
+                                onOpenCategory(cat)
                             } label: {
                                 VStack(alignment: .leading, spacing: 6) {
                                     HStack(spacing: 6) {
@@ -596,7 +685,11 @@ struct SearchView: View {
                             voidFilter()
                         }
                         ForEach(Category.allCases) { c in
-                            Pill(text: c.title, style: scope == c ? .selected : .normal) {
+                            // `tint:` 是必需的：选中的那一枚要用这一类的颜色。
+                            // 不传的话它长成主色 —— 而主色就是「喜好」的色，
+                            // 于是「只看讨厌的事」被渲染得像「只看喜好」。
+                            Pill(text: c.title, style: scope == c ? .selected : .normal,
+                                 tint: c.tint) {
                                 scope = c
                                 voidFilter()
                             }
@@ -778,6 +871,14 @@ struct ReminderListView: View {
     @Query(filter: #Predicate<Record> { $0.deletedAt == nil }) private var records: [Record]
     @Environment(\.modelContext) private var ctx
 
+    /// 「你没打开 App 的时候响过、但还没跟你说过」的那几条。
+    ///
+    /// **读的是 `RootView` 起 App 时定格的那一份，不在这里现算。** 现算的话，
+    /// 进来这一屏会把水位线推到现在 → 数组立刻变空 → banner 在用户眼皮底下消失：
+    /// 他刚看到「2 条提醒已过期」，还没来得及看是哪两条就没了。
+    /// 所以这里是**读**，清空的时机交给「离开这一屏」（见 `.onDisappear`）。
+    @ObservedObject private var missedStore = MissedReminders.shared
+
     /// 同 SearchView：它既是 tab 根、也会被 push 进来。
     private var backAction: (() -> Void)? {
         path.isEmpty ? nil : { path.removeLast() }
@@ -798,6 +899,13 @@ struct ReminderListView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: S.innerGapL) {
+
+                    // 24 屏「没有通知也不会漏」的第一条兜底：**打开 App 的时候补发**。
+                    // 原话是「一进来就能看到「2 条提醒已过期」，不会静悄悄地过掉」——
+                    // 所以数字要真的出现在第一屏，而不是等用户自己去列表里比对。
+                    if !missedStore.items.isEmpty {
+                        missedBanner(count: missedStore.items.count)
+                    }
 
                     // 分组标题照 05 屏定稿。**分两块不是为了好看** ——
                     // 「定时」与「场景」是两种心智（到点响 / 到地方响），
@@ -828,6 +936,37 @@ struct ReminderListView: View {
         }
         .background(C.bg)
         .toolbar(.hidden, for: .navigationBar)
+        // 清空放在**离开**这一屏时，不放在进来时：进来就清的话，
+        // 用户还没读到那两条，标记先没了（同一类顺序陷阱，第三次出现）。
+        .onDisappear { missedStore.acknowledge() }
+    }
+
+    /// 05 屏顶部那条「N 条提醒已过期」。
+    ///
+    /// 措辞上刻意不说「你错过了」—— 那是责备，而用户什么也没做错：
+    /// 手机在兜里、在充电、开了专注模式，任何一件都可能让通知没被看见。
+    /// 这句只陈述事实（**响过了**）并给出下一步（下面标了「已过期」的就是）。
+    private func missedBanner(count: Int) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle().fill(C.primary).frame(width: 36, height: 36)
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.white)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(count) 条提醒已过期")
+                    .font(Typo.captionM)
+                    .foregroundStyle(C.primary)
+                Text("你没打开 App 的时候响过。下面标着「已过期」就是它们，点一条能改时间或关掉。")
+                    .font(Typo.caption)
+                    .foregroundStyle(C.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(C.warm, in: RoundedRectangle(cornerRadius: R.card, style: .continuous))
     }
 
     // MARK: 列表
@@ -835,6 +974,12 @@ struct ReminderListView: View {
     private var reminders: [Reminder] { records.compactMap(\.reminder) }
     private var dateReminders: [Reminder] { reminders.filter { $0.kind == .date } }
     private var geoReminders:  [Reminder] { reminders.filter { $0.kind == .geo } }
+
+    /// 比的是 `id` 不是对象本身：`Reminder` 是 `@Model`，同一条记录可能被
+    /// 两个 `@Query` 各自实例化一次 —— 拿对象做 `contains` 会时灵时不灵。
+    private func isMissed(_ m: Reminder) -> Bool {
+        missedStore.items.contains { $0.id == m.id }
+    }
 
     private func groupLabel(_ t: String) -> some View {
         Text(t)
@@ -847,11 +992,20 @@ struct ReminderListView: View {
         SCard {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(m.kind == .date
-                         ? "定时 · \(m.time.hhmm)"
-                         : "场景 · 到「\(m.placeName ?? "某处")」附近")
-                        .font(Typo.numCaptionM)
-                        .foregroundStyle(C.primary)
+                    HStack(spacing: 6) {
+                        Text(m.kind == .date
+                             ? "定时 · \(m.time.hhmm)"
+                             : "场景 · 到「\(m.placeName ?? "某处")」附近")
+                            .font(Typo.numCaptionM)
+                            .foregroundStyle(C.primary)
+                        // 「已过期」这一格只在**这一屏刚打开时算出来的那批**里出现。
+                        // 它回答的是「刚才 banner 里说的那 2 条是哪 2 条」——
+                        // 数字和标记必须是同一批，否则用户会数不出来。
+                        if isMissed(m) {
+                            Pill(text: "已过期", style: .flat, soft: C.warm, size: .tag,
+                                 emphasis: true, textTint: C.primary)
+                        }
+                    }
                     Text(m.message)
                         .font(Typo.bodyS)
                         .foregroundStyle(C.ink)

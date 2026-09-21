@@ -14,13 +14,21 @@ import SwiftData
 struct BrowseView: View {
     @Binding var path: [Route]
 
+    /// 当前在看哪一类。**它是「你在哪一屏」的一部分，所以归容器（`RootView`）拿着。**
+    ///
+    /// 原来它是这一屏自己的 `@State`，那样子弹不出去、外面也塞不进来：
+    /// ① 01 首页那四张分类卡点下去没法「切到这一类」（只能退而求其次去搜索页，
+    ///    见 `HomeView` 里那四张卡的注释）；
+    /// ② 点「＋」新建时没法知道「用户此刻站在哪一类里」——
+    ///    这正是 2026-09-21 那个「记讨厌的事存成喜好」缺陷的另一半。
+    ///
+    /// 它仍然不进数据库：它和 25 屏的长期排序偏好、30 屏的筛选草稿
+    /// 是三份不同的状态，不能互相写回。
+    @Binding var cat: Category
+
     @Query(filter: #Predicate<Record> { $0.deletedAt == nil },
            sort: \Record.updatedAt, order: .reverse)
     private var all: [Record]
-
-    /// 当前分类是「这一屏的临时状态」，不进数据库 ——
-    /// 它和 25 屏的长期排序偏好、30 屏的筛选草稿是三份不同的状态，不能互相写回。
-    @State private var cat: Category = .like
 
     /// 排序偏好。25 屏改的就是它。
     @AppStorage("listSort") private var sortRaw: String = ListSort.recent.rawValue
@@ -51,7 +59,9 @@ struct BrowseView: View {
     /// 而报错会落在离现场很远的地方。这里写清楚，调用处就只剩一个 `emptyAction`。
     private var emptyAction: (title: String, run: () -> Void)? {
         guard !all.isEmpty else { return nil }
-        return (title: "新建一条", run: { path.append(.recordEdit(id: "")) })
+        // 带着当前这一类进编辑器 —— 站在「讨厌的事」的空屏上点「新建一条」，
+        // 本来就是想记一条讨厌的事。
+        return (title: "新建一条", run: { path.append(.recordNew(cat: cat)) })
     }
 
     var body: some View {
@@ -177,7 +187,12 @@ struct BrowseView: View {
 
             // 浮起按钮。放在导航上方 108 处，不是贴在屏底 ——
             // 贴底会被底部导航盖住一半。
-            Button { path.append(.recordEdit(id: "")) } label: {
+            //
+            // **新建时把当前这一类带过去。** 用户站在「讨厌的事」那一屏
+            // 点这个＋，他要记的就是一条讨厌的事；不带的话编辑器会从
+            // 默认的「喜好」开局，而那一行在屏幕上半部、很容易不被看见，
+            // 于是「我记的」和「它存成的」变成两件事。
+            Button { path.append(.recordNew(cat: cat)) } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(.white)

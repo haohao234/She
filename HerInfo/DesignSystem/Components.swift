@@ -216,11 +216,22 @@ struct ChipRow<T: Hashable>: View {
     let label: (T) -> String
     @Binding var selection: T
 
+    /// 选中态的底色。返回 `nil` 就用胶囊自己的默认色（主色）。
+    ///
+    /// **装了分类的那两处（03 屏的分类、04 屏的「只看某一类」）必须传它。**
+    /// 规范里那一条是：`tint` 只负责实心选中态的底与描边，
+    /// **选中的那一枚要用它自己那一类的颜色**。不传的话四枚选中态
+    /// 全长成主色，而主色正好等于「喜好」——
+    /// 于是「我选了讨厌的事」被渲染成「看起来像喜好」，这是 2026-09-21
+    /// 那个「记讨厌的事存成喜好」缺陷里最容易被误读成「存错了」的一半。
+    var tint: ((T) -> Color)? = nil
+
     var body: some View {
         FlowLayout(spacing: 8) {
             ForEach(options, id: \.self) { opt in
                 Pill(text: label(opt),
                      style: selection == opt ? .selected : .flat,
+                     tint: tint?(opt) ?? C.primary,
                      onTap: { selection = opt })
             }
         }
@@ -820,10 +831,19 @@ struct TabPill: View {
 
 enum HomeTab: String, CaseIterable, Identifiable {
     /// **顺序就是 tab 栏里从左到右的顺序。**
-    /// 生理期排在「分类」与「搜索」之间 —— 画布 37 屏上就是这个位次：
-    /// 它是一件「要经常看一眼」的事，不是设置类的深入口。
+    ///
+    /// 生理期在第 2 格 —— 依据是设计交付物里两处**互相印证**的记载：
+    /// ① 生理期稿的板 3 写的是「底部 tab 加一个「生理期」（**第 2 格**）」；
+    /// ② 画布 37 屏的底栏上，生理期确实画在第 2 格（那颗实心胶囊）。
+    ///
+    /// ⚠️ **2026-09-15 修正**：此前这里写的是「生理期排在「分类」与「搜索」之间
+    /// —— 画布 37 屏上就是这个位次」，并把 case 排成 `home, category, cycle, …`。
+    /// 那句注释**与画布不符**：37 屏的底栏里根本看不到生理期在「分类」右边 ——
+    /// 因为那一版把「分类」整格漏画了（4 格：首页 / 生理期 / 搜索 / 提醒）。
+    /// 现在按设计把生理期提到第 2 格，「分类」补回第 3 格，与画布一致。
+    ///
     /// 加一个 case，`TabPill` 那边靠 `allCases` 自动多一格，那里不用改。
-    case home, category, cycle, search, remind
+    case home, cycle, category, search, remind
     var id: String { rawValue }
 
     var title: String {

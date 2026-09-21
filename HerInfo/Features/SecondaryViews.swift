@@ -668,6 +668,16 @@ struct NotificationDeniedView: View {
                         .foregroundStyle(C.ink2)
                         .lineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
+                    // 24 屏「没有通知也不会漏」那一格。**这条不是安慰** ——
+                    // 它说的是真的：App 每次起来都会把「你没看见的那些」捞出来（见
+                    // `MissedReminders` / 05 屏顶部那条「N 条提醒已过期」）。
+                    // 写在这里是因为用户此刻最怕的正是「关了通知 = 事情会悄悄溜掉」。
+                    Text("而且不会漏：每次打开 App，你没看见的提醒会自己浮出来。")
+                        .font(Typo.bodyS)
+                        .foregroundStyle(C.primary)
+                        .lineSpacing(6)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
                 }
                 .padding(.horizontal, S.screen)
 

@@ -105,10 +105,31 @@ struct RecordEditorView: View {
     private var isEditing: Bool { !editingID.isEmpty }
     private var record: Record? { created ?? existing.first }
 
-    init(path: Binding<[Route]>, editingID: String, starterID: String) {
+    init(path: Binding<[Route]>, editingID: String, starterID: String,
+         newCat: Category = .like) {
         self._path = path
         self.editingID = editingID
         self.starterID = starterID
+        // **新建时的分类默认值 = 你在哪一屏点的「＋」。**
+        //
+        // 这一条是 2026-09-21 补的，起因是一个真机上报上来的缺陷：
+        // 在「讨厌的事」那一屏点＋记一条，存下来落在「喜好」里。
+        // 原因是新建走的 `Route.recordEdit(id: "")` 只带了一个 id，
+        // 分类从来没被带过 —— `cat` 的初值写死 `.like`，于是
+        // 「我在讨厌的事里记的」和「它被存成什么」变成了两件事。
+        //
+        // **放在 `init` 里给 `State` 初值，而不是等 `onAppear` 再写。**
+        // 写进 `loadIfNeeded()` 的话，第一帧渲染出来的仍是「喜好」被选中，
+        // 下一帧才跳到「讨厌的事」—— 用户会看见一次高亮闪动，
+        // 而且正好闪在他要确认的那一行上。首帧就该是对的那一类。
+        //
+        // 引导态（21 屏）那一题自带分类，它优先 —— 那一题是「填一半」，
+        // 分类属于替用户选好的那一半，不该被来源屏覆盖。
+        let initial: Category = starterID.isEmpty
+            ? newCat
+            : StarterTopic.from(starterID).cat
+        _cat = State(initialValue: initial)
+
         // 新建时给一个永不匹配的 id，而不是在 #Predicate 里写分支 ——
         // #Predicate 宏对捕获变量的表达式很挑，用常量最稳。
         let target = editingID.isEmpty ? "\u{0}__new__" : editingID
@@ -181,9 +202,13 @@ struct RecordEditorView: View {
                 VStack(alignment: .leading, spacing: 18) {
 
                     FieldBlock(label: "分类") {
+                        // `tint:` 不能省 —— 选中的那一枚要用它自己那一类的颜色。
+                        // 省掉的话四枚的选中态全长成主色，而主色正是「喜好」的色，
+                        // 于是「我选了讨厌的事」看起来像「它给我存成了喜好」。
                         ChipRow(options: Category.allCases,
                                 label: { $0.title },
-                                selection: $cat)
+                                selection: $cat,
+                                tint: { $0.tint })
                     }
 
                     FieldBlock(label: "标题") {

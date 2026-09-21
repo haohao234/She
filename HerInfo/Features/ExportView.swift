@@ -67,7 +67,8 @@ struct ExportView: View {
                             Rectangle().fill(C.line).frame(height: 1)
                             ChipRow(options: Category.allCases,
                                     label: { $0.title },
-                                    selection: $cat)
+                                    selection: $cat,
+                                    tint: { $0.tint })
                                 .padding(.top, 4)
                         }
                     }
