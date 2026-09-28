@@ -241,8 +241,15 @@ struct RecordEditorView: View {
                         //
                         // 参数顺序照 `PhotoGrid` 存储属性的声明顺序写
                         // （`onOpen` 在 `onAdd` 之前），见 `check-argorder.py`。
+                        //
+                        // `onRemove` 是「预览里那一格读不出来 → 就地摘掉它」
+                        // 的出路（见 `PhotoViewer`）。编辑态本来就允许改配图，
+                        // 所以这里和格子上那个 ✕ 是同一件事的两个入口：
+                        // 都改 `photoHashes`，都靠下面那条 `.onChange` 落盘。
                         PhotoGrid(hashes: $photoHashes,
-                                  onOpen: { PhotoViewerCenter.shared.open(photoHashes, at: $0) },
+                                  onOpen: { PhotoViewerCenter.shared.open(
+                                      photoHashes, at: $0,
+                                      onRemove: { h in photoHashes.removeAll { $0 == h } }) },
                                   onAdd: { pickingPhotos = true })
                         Text("长按可以拖动排序 · 最多 \(Photo.maxPerRecord) 张")
                             .font(Typo.caption)

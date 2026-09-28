@@ -381,6 +381,22 @@ struct RecordDetailView: View {
         Photo.uniqueHashes(record?.photoHashes ?? [])
     }
 
+    /// 把一张**读不出文件的**图从记录里摘掉。入口只有一个：
+    /// 预览页那一态上的「移除这张图」。
+    ///
+    /// **只摘 hash，不碰文件** —— 和编辑器里那个 ✕ 是同一条纪律
+    /// （见 `PhotoGrid.remove`）：历史版本可能还引用着它，
+    /// 文件交给 `PhotoStore.purgeOrphans` 按引用全集统一清。
+    ///
+    /// 它不破坏「详情页只读」：那句话说的是**不改内容**。
+    /// 一格永远读不出来的图不是内容，是坏掉的数据 ——
+    /// 用户得有个地方把它收拾掉，否则那一格会永远躺在那里。
+    private func removePhoto(_ hash: String) {
+        guard let r = record else { return }
+        r.photoHashes.removeAll { $0 == hash }
+        try? ctx.save()
+    }
+
     private var history: [Revision] {
         revisions.filter { $0.recordID == recordID }.sorted { $0.version > $1.version }
     }
@@ -433,8 +449,14 @@ struct RecordDetailView: View {
                                 // 注意参数顺序：`onOpen` 在 `editable` 之前
                                 // （= `PhotoGrid` 存储属性的声明顺序，
                                 // 见 `.workbuddy/checks/check-argorder.py`）。
+                                //
+                                // `onRemove` 只服务一件事：翻到那一格发现读不出文件时，
+                                // 就地把它从记录里摘掉。它不破坏「详情页只读」——
+                                // 理由见 `removePhoto`。
                                 PhotoGrid(hashes: .constant(photoHashes),
-                                          onOpen: { PhotoViewerCenter.shared.open(photoHashes, at: $0) },
+                                          onOpen: { PhotoViewerCenter.shared.open(
+                                              photoHashes, at: $0,
+                                              onRemove: { removePhoto($0) }) },
                                           editable: false)
                             }
 

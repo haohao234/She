@@ -60,17 +60,53 @@ final class PhotoViewerCenter: ObservableObject {
     @Published private(set) var index = 0
     @Published private(set) var visible = false
 
+    /// 用户按了「移除这张图」（**只有文件读不到时才会出现这个按钮**）。
+    ///
+    /// 【为什么由宿主传进来】预览这一层拿到的是一份 `[String]` 快照，
+    /// 它不知道这些 hash 挂在谁身上（记录详情页是 `record.photoHashes`，
+    /// 编辑器是一份 `@State`）。要改的恰恰是那一份 —— 所以只能由
+    /// 知道归属的那一层把动作交进来。
+    ///
+    /// 【为什么只给「读不到」用】详情页在设计上是只读的（「不给删除角标」），
+    /// 给它加一个通用的删除按钮是**新增一个设计上没有的功能**；
+    /// 而「把一格永远读不出来的图从记录里摘掉」不是编辑，是**收拾**——
+    /// 它的必要性来自数据已经坏了，不是来自用户改主意了。
+    private var onRemove: ((String) -> Void)?
+
     /// 打开预览。`hashes` 为空时什么也不做 ——
     /// 空数组会得到一个「全黑的空屏 + 找不到图」的画面，那不是用户要求的。
-    func open(_ hashes: [String], at index: Int) {
+    func open(_ hashes: [String], at index: Int, onRemove: ((String) -> Void)? = nil) {
         guard !hashes.isEmpty else { return }
         self.hashes = hashes
         self.index = min(max(0, index), hashes.count - 1)
+        self.onRemove = onRemove
         withAnimation(.easeOut(duration: 0.22)) { visible = true }
     }
 
     func close() {
         withAnimation(.easeIn(duration: 0.18)) { visible = false }
+    }
+
+    /// 把某一张从记录里摘掉，预览自己这一份也跟着少一张。
+    ///
+    /// **按 hash 而不是按下标** —— 这一条是承重的。外面那个 `index` 是
+    /// **进场下标**（用户点的是第 3 格），而用户翻了几页之后屏幕上停在第几张，
+    /// 只有 `PhotoViewer` 自己的 `@State` 知道。按下标删的话，
+    /// 「翻到第 5 张再点移除」会删掉第 3 格 —— 删错了，而且看不出来。
+    ///
+    /// 三件事缺一不可：
+    ///  ① 通知宿主去改真正的那份数组（它才会落盘）；
+    ///  ② 预览**自己**的 `hashes` 同时少一张 —— `TabView` 的页数照这份算，
+    ///     不跟着改的话屏幕上会留着刚被移除的那一页（按了没反应，像按钮坏了）；
+    ///  ③ 下标夹回合法范围，空了就整个收起 ——
+    ///     不夹的话 `selection` 指向一个不存在的 tag，画面停在空白页上，
+    ///     而且没有任何报错（`PhotoViewer.init` 里那段夹子防的是同一件事）。
+    func remove(_ hash: String) {
+        guard let i = hashes.firstIndex(of: hash) else { return }
+        onRemove?(hash)
+        hashes.remove(at: i)
+        if hashes.isEmpty { close(); return }
+        if index >= hashes.count { index = hashes.count - 1 }
     }
 }
 
@@ -88,7 +124,10 @@ struct PhotoViewerLayer: View {
             if center.visible {
                 PhotoViewer(hashes: center.hashes,
                             startAt: center.index,
-                            onClose: { center.close() })
+                            onClose: { center.close() },
+                            // 「移除这张图」按 **hash** 交上去（不是下标）——
+                            // 理由写在 `PhotoViewerCenter.remove(_:)`。
+                            onRemove: { hash in center.remove(hash) })
                     // 淡入淡出，不做「从缩略图放大」那条转场 ——
                     // 那个转场要拿到格子在图上的绝对位置（`anchorPreference`
                     // 一路往上传），为一个 0.2 秒的动画铺这么多管线不划算。
@@ -107,6 +146,12 @@ struct PhotoViewer: View {
 
     let hashes: [String]
     let onClose: () -> Void
+    /// 「把上面那一张从记录里摘掉」（按 hash）。见 `PhotoViewerCenter.remove(_:)`。
+    ///
+    /// 传的是**动作**而不是「能不能删」：按钮出不出现由 `FullPhotoView` 的
+    /// `failed` 决定（只有真的读不到文件时才给这个出路），
+    /// 在这里再判一次就成了两处判据，迟早会不一致。
+    let onRemove: ((String) -> Void)?
 
     @State private var index: Int
 
@@ -120,9 +165,11 @@ struct PhotoViewer: View {
     /// 这个数**必须先降下来**，不能照搬。
     private static let maxPixel = PhotoStore.maxPixel
 
-    init(hashes: [String], startAt: Int, onClose: @escaping () -> Void) {
+    init(hashes: [String], startAt: Int, onClose: @escaping () -> Void,
+         onRemove: ((String) -> Void)? = nil) {
         self.hashes = hashes
         self.onClose = onClose
+        self.onRemove = onRemove
         // 夹一下边界：调用方传进来的下标可能来自一个刚刚被删掉一张图的数组。
         // 不夹的话 `TabView` 的 `selection` 会指向一个不存在的 tag，
         // 画面停在一张**谁也不认识**的空白页上（而且没有任何报错）。
@@ -141,12 +188,19 @@ struct PhotoViewer: View {
             // 与纵向手势的仲裁都得自己来）。
             TabView(selection: $index) {
                 ForEach(Array(hashes.enumerated()), id: \.offset) { i, hash in
-                    FullPhotoView(hash: hash, maxPixel: Self.maxPixel)
+                    FullPhotoView(hash: hash, maxPixel: Self.maxPixel, onRemove: onRemove)
                         .tag(i)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea()
+            // 移除一张之后 `hashes` 会短一截，而 `index` 是 `@State` ——
+            // **它不会跟着变**，于是 `selection` 会指到一个不存在的 tag 上
+            // （画面停在空白页，而且没有任何报错）。这一句是「移除」这个动作
+            // 带进来的新边界，和 init 里那段夹子防的是同一件事。
+            .onChange(of: hashes.count) { _, n in
+                if n > 0, index >= n { index = n - 1 }
+            }
 
             // 顶部这条**不**忽略安全区：它要给系统状态栏让位
             // （这个 App 没有隐藏状态栏，时间与电量一直是用户能看见的）。
@@ -187,6 +241,9 @@ struct PhotoViewer: View {
 private struct FullPhotoView: View {
     let hash: String
     let maxPixel: CGFloat
+    /// 只有 `hash` 属于当前这一页时按钮才有意义 —— 所以这里收的是
+    /// **带 hash 的动作**，由本页自己把 hash 填进去，不靠外面猜下标。
+    var onRemove: ((String) -> Void)? = nil
 
     @State private var image: UIImage?
     /// 读完了、但没拿到图。**必须和「还在读」分开** ——
@@ -201,13 +258,47 @@ private struct FullPhotoView: View {
                     .resizable()
                     .scaledToFit()
             } else if failed {
-                VStack(spacing: 10) {
+                // 「读不到文件」这一态。**2026-09-21 换了文案、也加了出路。**
+                //
+                // 原来这里只有一句话：「这张图的文件不在这台手机上」。两个问题：
+                //   · 它把原因说成了手机的错。真正的原因在 App 这一侧
+                //     （见 `PhotoStore.purgeOrphans` 的那段复盘），而这句话
+                //     让用户唯一能做的事变成「怀疑手机」。
+                //   · 它说完就完了。用户既不知道该做什么，也没有任何动作可做 ——
+                //     只能一格一格点过去看哪几张坏了，然后关掉。
+                //
+                // 现在三件事一次给全：说清状态、给一句真能做的、给一个就地能按的。
+                // 「再加一次会认回来」不是安慰话 —— 图片是内容寻址的
+                // （hash = 压缩后字节的 SHA-256），同一张原图再选一次算出的
+                // hash 一模一样，记录里那行 hash 本来就是找它回来的凭据。
+                VStack(spacing: 12) {
                     Image(systemName: "photo")
                         .font(.system(size: 36, weight: .light))
-                    Text("这张图的文件不在这台手机上")
-                        .font(Typo.caption)
+                    VStack(spacing: 5) {
+                        Text("这张图的文件不在了")
+                            .font(Typo.captionM)
+                        Text("把同一张照片再加一次，它会自己认回来；也可以把它从记录里移除")
+                            .font(Typo.caption)
+                            .multilineTextAlignment(.center)
+                    }
+                    if let onRemove {
+                        // 只在**这一态**出现：详情页在设计上是只读的，
+                        // 给它加一个通用删除按钮是新增设计里没有的功能。
+                        // 而「把一格永远读不出来的图摘掉」是收拾，不是编辑。
+                        Button { onRemove(hash) } label: {
+                            Text("移除这张图")
+                                .font(Typo.captionM)
+                                .foregroundStyle(.white.opacity(0.92))
+                                .padding(.horizontal, 16)
+                                .frame(height: 34)
+                                .background(.white.opacity(0.16), in: Capsule(style: .continuous))
+                        }
+                        .pressDown()
+                        .padding(.top, 2)
+                    }
                 }
                 .foregroundStyle(.white.opacity(0.5))
+                .padding(.horizontal, S.screen)
             } else {
                 ProgressView()
                     .tint(.white.opacity(0.5))

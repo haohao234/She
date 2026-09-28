@@ -49,6 +49,17 @@ struct HerInfoApp: App {
     /// 保守启动的第三级是「把库整份挪走再新建」，而库一旦被 SwiftData 打开，
     /// 再挪就等于把那个连接指向一个不存在的文件。
     private let container: ModelContainer = {
+        // ⓪ **配图目录的一次性搬家，必须排在「任何视图存在」之前。**
+        //
+        // 放进这个闭包（而不是 `bootstrap`）的理由只有一条：`bootstrap` 挂在
+        // `.task` 上，那时首屏已经在渲染了 —— 详情页的格子会去读图，
+        // 而搬家正在把文件从老位置往新位置挪。那几百毫秒里读到的每一张都会是
+        // 「文件不在」，而且 `.task(id: hash)` 不会因为搬家完就重来一次。
+        // 放在这里，等于是「屏幕上还没有任何一张图」的时候把它搬完。
+        //
+        // 它只碰文件与 UserDefaults，不碰 SwiftData，所以排在开库之前是安全的。
+        PhotoStore.migrateDirectoryIfNeeded()
+
         let mode = LaunchGuard.begin()
 
         // 上一轮连保守启动都没走完 → 库整份挪走、新建一份空的。
@@ -140,7 +151,19 @@ struct HerInfoApp: App {
             if existing == 0 { HerInfoStore.seed(ctx) }
         }
 
-        let all = (try? ctx.fetch(FetchDescriptor<Record>())) ?? []
+        // **读失败 ≠ 一条记录都没有。**
+        //
+        // 这一个值同时喂给「重排提醒」和「清孤儿图片」，而后者是**删**。
+        // 原来的写法是 `(try? ctx.fetch(…)) ?? []` —— 「读不出来」与「空库」
+        // 被压成了同一个值，于是一次读失败就等于「磁盘上所有配图都是孤儿」。
+        // 2026-09-21 用户报的「导入过的图全没了、记录却一条不少」正是这个形状：
+        // 记录还在，说明那次读失败是**一次性的**（下次启动就好了），
+        // 用户那边看不出任何异常 —— 只有图片被删掉了，而且不可回。
+        //
+        // 拆成两件事：`fetched == nil` 就是「这次没读到」，
+        // 所有**有后果**的步骤（清孤儿图片、如实播报）都据此跳过。
+        let fetched = try? ctx.fetch(FetchDescriptor<Record>())
+        let all = fetched ?? []
 
         if !safe {
             // ② 回收站 30 天到期清理。**必须在清孤儿图片之前** ——
@@ -169,13 +192,22 @@ struct HerInfoApp: App {
         // **回填没做完就绝不做这一步。** 引用全集是从 `Record.photoHashes` 数的，
         // 而老库这一列在回填之前是空的 —— 那时候扫一遍等于把用户所有配图
         // 当成孤儿删掉。宁可让孤儿多占一会儿磁盘，也不能有一次误删。
+        //
+        // **`fetched` 是 nil 也绝不做这一步** —— 同一条理由，见上面那段。
+        // 这是第三道：前两道（回填标记、清理函数自己的「引用集为空就收工」）
+        // 都在那一侧，这一道在调用侧 —— 删这种动作，值得在两边各挡一次。
         let backfilled = UserDefaults.standard.bool(forKey: HerInfoStore.photoBackfillKey)
-        if !safe, backfilled {
+        if !safe, backfilled, fetched != nil {
             let revisions = (try? ctx.fetch(FetchDescriptor<Revision>())) ?? []
             let avatar = (try? ctx.fetch(FetchDescriptor<Profile>()))?.first?.avatarHash
-            PhotoStore.purgeOrphans(keeping: PhotoStore.referencedHashes(records: all,
-                                                                         revisions: revisions,
-                                                                         avatar: avatar))
+            let report = PhotoStore.purgeOrphans(keeping: PhotoStore.referencedHashes(records: all,
+                                                                                       revisions: revisions,
+                                                                                       avatar: avatar))
+            announcePhotoTrouble(report)
+        } else if !safe, backfilled {
+            // 这次读不到记录 → 一张图都没清。**要说出来** —— 它是异常，
+            // 而且是那种「不说就永远查不出」的异常（下一次启动就恢复正常了）。
+            announcePhotoSweepSkipped("这次没能读到记录")
         }
 
         // ⑤ 「这次启动真的走完了」。
@@ -221,6 +253,58 @@ struct HerInfoApp: App {
     private func announceSafeLaunchIfAny(_ safe: Bool) {
         guard safe else { return }
         ToastCenter.shared.show("上次启动没能走完，这次先保证能打开（部分整理已跳过）")
+    }
+
+    // MARK: - 配图出事时的那两句话
+
+    /// 「有图被记录引用着、文件却不在」—— 这件事必须说一句。
+    ///
+    /// 【为什么必须有】在这次之前，图丢了这件事在这个 App 里**没有任何出口**：
+    /// 格子照样画一张渐变（`PhotoCell` 是刻意回落到渐变的，理由是
+    /// 「不该表现成破损」），只有一张张点开才会看到那句
+    /// 「这张图的文件不在这台手机上」。所以用户发现的时候，
+    /// 已经追不回「从哪一次启动开始少的」。
+    ///
+    /// 【为什么不每次启动都弹】重复的提示等于没有提示。只报**变糟**的时候：
+    /// 记下上次报过的数目，更多了才出声；回到 0 就复位，以后再到 1 还会报。
+    ///
+    /// 【这里的数**不是这次清理删掉的**】这次一张都没删它 ——
+    /// 它数的是「记录说有这么张图，磁盘上没有」。删掉那行 hash 才是真的丢
+    /// （内容寻址：用户再选一次同一张照片会算出同一个 hash，文件就能重新对上），
+    /// 所以这里只报数，一个字节都不动。
+    @MainActor
+    private func announcePhotoTrouble(_ report: PhotoStore.PurgeReport) {
+        if let why = report.skipped {
+            announcePhotoSweepSkipped(why)
+            return
+        }
+
+        let d = UserDefaults.standard
+        let key = "hi.photos.missingReported"
+
+        guard report.referencedMissing > 0 else {
+            d.removeObject(forKey: key)
+            return
+        }
+        guard report.referencedMissing > d.integer(forKey: key) else { return }
+        d.set(report.referencedMissing, forKey: key)
+        ToastCenter.shared.show("有 \(report.referencedMissing) 张配图的文件不在这台手机上")
+    }
+
+    /// 「这一次的图片清理整体跳过了」。同一条原因只说一次 ——
+    /// 每次都弹就变成了背景噪音，而这句提示的价值全在「它以前没出现过」。
+    ///
+    /// 跳过本身是**正确**的（见 `PhotoStore.purgeOrphans`：
+    /// 引用集为空而磁盘上有图、或者目录列不出来，都不该删任何东西），
+    /// 要说的是「为什么这次没做成」—— 那是异常，而且下一次启动它就好了，
+    /// 不留一句话就永远查不出来。
+    @MainActor
+    private func announcePhotoSweepSkipped(_ why: String) {
+        let d = UserDefaults.standard
+        let key = "hi.photos.sweepSkipped"
+        guard d.string(forKey: key) != why else { return }
+        d.set(why, forKey: key)
+        ToastCenter.shared.show("这次没清理图片（\(why)）")
     }
 
     /// 把三个系统级入口记下的东西落成真正的数据。

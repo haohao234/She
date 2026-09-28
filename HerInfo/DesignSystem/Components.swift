@@ -649,9 +649,20 @@ private struct PhotoDropDelegate: DropDelegate {
 
 /// 一张配图。
 ///
-/// **读不到图时回落到渐变，而不是留一个空白洞** —— 用户看到的应该永远是
-/// 「这里有一张图」，而不是「这里坏了」。文件缺失只可能是还没落盘或已被清理，
-/// 两种情况都不该在界面上表现成破损。
+/// 【读不到图时怎么画 —— 2026-09-21 改了】
+///
+/// 原来这里回落到**分类渐变**，理由写的是「用户看到的应该永远是
+/// 『这里有一张图』，而不是『这里坏了』」。那个理由是错的，而且错得正着：
+/// 一张读不到的图，和一个正常的装饰格子在屏幕上一模一样 —— 于是
+/// 「用户的图没了」这件事在界面上**没有任何表现**，只有一张张点开
+/// 才会撞见那句「这张图的文件不在这台手机上」。等于 App 把数据丢了、
+/// 还顺手帮着瞒了一件本来该报的事。
+///
+/// 现在这一态是一个**可辨识的缺失态**：中性底 + 实线描边 + 一个 photo 图标。
+/// 它要同时满足三件事：
+///   · 和一张真照片分得开 —— 所以不能再用分类渐变（那是「这里有内容」的语气）；
+///   · 和编辑器那个「＋」格分得开 —— 同一个底，但「＋」是**虚线**描边 + 加号；
+///   · 不显得像崩了 —— 不带红、不带感叹号。它是一个状态，不是一个错误。
 struct PhotoCell: View {
     let hash: String
     var size: CGFloat = 105
@@ -659,6 +670,9 @@ struct PhotoCell: View {
     var onRemove: (() -> Void)?
 
     @State private var image: UIImage?
+    /// 读完了、文件不在（或解不出来）。**必须和「还在读」分开** ——
+    /// 混在一起的话，缺失的那一格会永远停在加载态上，看起来只是慢。
+    @State private var missing = false
 
     /// 显式 init 的理由见 `SegmentControl` ——
     /// 只要有一个 `private` 存储属性，逐成员初始化器就会**降级成 private**。
@@ -676,6 +690,15 @@ struct PhotoCell: View {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
+                } else if missing {
+                    // 缺失态。图标用 `photo`（不带斜杠）——
+                    // 斜杠是「禁止」，而这里要说的只是「这一格没东西」。
+                    C.bg
+                        .overlay(
+                            Image(systemName: "photo")
+                                .font(.system(size: 18, weight: .light))
+                                .foregroundStyle(C.ink3)
+                        )
                 } else {
                     LinearGradient(colors: [C.primarySoft, C.primaryDeep],
                                    startPoint: .topLeading,
@@ -703,7 +726,10 @@ struct PhotoCell: View {
         // 加载放在 .task 里：磁盘 IO 与解码都不该压在主线程。
         // maxPixel 给 3 倍是为了 Retina 下不糊，同时远小于原图。
         .task(id: hash) {
-            image = await PhotoStore.load(hash, maxPixel: size * 3)
+            missing = false
+            let loaded = await PhotoStore.load(hash, maxPixel: size * 3)
+            image = loaded
+            missing = (loaded == nil)
         }
     }
 }

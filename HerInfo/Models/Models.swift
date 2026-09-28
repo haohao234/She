@@ -754,6 +754,10 @@ enum HerInfoStore {
     /// App 当场能用；而且这件事**会如实告诉他**（见 `storeResetKey`），
     /// 不是静默换一个空库。
     ///
+    /// **2026-09-21 补：配图目录也一起搬。** 只搬库的话，「旧数据未删」
+    /// 这句话对记录成立、对图片不成立 —— 新库引用集为空，下一次启动
+    /// 就会把老库那批图清干净。理由写在下面搬图片那一段。
+    ///
     /// 返回 nil = 连新建都失败（磁盘满 / 沙盒异常）—— 那种情况崩是诚实的。
     @MainActor
     static func containerAfterSettingAsideBrokenStore() -> ModelContainer? {
@@ -772,6 +776,21 @@ enum HerInfoStore {
             let src = support.appendingPathComponent(suffix)
             guard fm.fileExists(atPath: src.path) else { continue }
             try? fm.moveItem(at: src, to: aside.appendingPathComponent(suffix))
+        }
+
+        // **配图跟着库一起走。**（2026-09-21 补）
+        //
+        // 不搬的话有一个后果，而且它比「记录打不开」更彻底：
+        // 新库是空的 → **下一次正常启动的引用全集也是空的** →
+        // `PhotoStore.purgeOrphans` 会把老库引用过的那批图当成孤儿全部清掉。
+        // 那一刻这句承诺就只剩一半是真的 ——「旧数据未删、重装之前拿得回来」：
+        // 记录确实还在 `broken-<时间戳>/` 里躺着，配图已经一张都没有了。
+        //
+        // 搬的是 `PhotoStore.directory`（它自己知道现在该用老位置还是新位置），
+        // 所以无论配图目录那次搬家做没做过，这里都搬得对。
+        let photos = PhotoStore.directory
+        if fm.fileExists(atPath: photos.path) {
+            try? fm.moveItem(at: photos, to: aside.appendingPathComponent("Photos"))
         }
 
         guard let fresh = try? container() else { return nil }
