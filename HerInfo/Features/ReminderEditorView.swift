@@ -74,9 +74,9 @@ struct ReminderEditorView: View {
     /// 「到某个地方就提醒」。名字仍然由用户定（最后一枚就是自定义）。
     private static let presetPlaces = ["公司", "家", "商场"]
 
-    /// 星期。`Calendar` 里 1 = 周日、7 = 周六 —— 与 `Reminder.weekday` 的约定一致。
-    private static let weekdayNames = ["", "周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-    private static let weekdayOptions = [1, 2, 3, 4, 5, 6, 7]
+    // 星期那一组（名字 + 选项值）**已收口到 `Reminder.weekdayNames` /
+    // `Reminder.weekdayOptions`**：05 屏卡片第三行也要念同一句话，
+    // 两个文件各存一份迟早会分叉。这里不再留副本。
 
     var body: some View {
         VStack(spacing: 0) {
@@ -230,8 +230,8 @@ struct ReminderEditorView: View {
                 // **没有任何地方能改它落在星期几**，于是「每周」永远是周三。
                 // 这里把「哪一天」显式摆出来，而不是藏进第二次点击。
                 if repeatRule == .weekly {
-                    ChipRow(options: Self.weekdayOptions,
-                            label: { Self.weekdayNames[$0] },
+                    ChipRow(options: Reminder.weekdayOptions,
+                            label: { Reminder.weekdayNames[$0] },
                             selection: $weekday)
                 }
             }
@@ -243,17 +243,12 @@ struct ReminderEditorView: View {
     /// 每种规则说的东西不同，而且要说得出区别 —— 尤其「每月 / 每年」：
     /// 它们的具体日子是上面那行大字里选的（点开就是日期 + 时间的选择器），
     /// 所以这里必须把那个日子念出来，否则用户改完了在界面上看不到任何变化。
+    /// 算法本身**不在这里** —— 在 `Reminder.makeRepeatLine`。
+    /// 05 屏卡片第三行说的就是同一句话（「每月 13 号 · 提前 1 天」），
+    /// 两处各写一份 switch 的话，改了一边另一边就悄悄旧了。
     private var dateLabel: String {
-        switch repeatRule {
-        case .weekly:
-            // **上限是 7，不是 6。** 数组下标 1…7 才对应周日…周六；
-            // 写 6 的话周六会被夹成周五 —— 一个只在周六才出现、所以很难被撞见的错。
-            return Self.weekdayNames[min(max(weekday, 1), 7)]
-        case .daily:   return "每天"
-        case .monthly: return "每月 \(Calendar.current.component(.day, from: time)) 号"
-        case .yearly:  return "每年 \(time.monthDayCN)"
-        case .none:    return "\(time.monthDayCN) · 仅一次"
-        }
+        Reminder.makeRepeatLine(rule: repeatRule, weekday: weekday, time: time,
+                                dayOfMonth: Calendar.current.component(.day, from: time))
     }
 
     /// 选择器要不要连日期一起给。
@@ -439,7 +434,23 @@ struct ReminderEditorView: View {
                             .font(Typo.caption)
                             .foregroundStyle(C.ink3)
                     }
-                    // 这一行就是提醒的全部 ——
+                    // **先标题、后正文 —— 跟真机上一样。**
+                    //
+                    // 通知横幅上最醒目的是 `content.title`，而
+                    // `ReminderService.scheduleDate` 把它设成记录的标题
+                    // （`content.title = r.title`，`r.title` 在保存时被写成 `rec.title`）。
+                    // 此前预览只画了正文，于是「保存前先看见它长什么样」少了一半 ——
+                    // 锁屏上先被看见的那一行恰恰没画。
+                    //
+                    // 标题为空时不画标题行：记录只加了图、没写字的那种，
+                    // 真机上也没有这一行。**预览不编**，编了就等于又骗一次。
+                    if let t = targetRecord?.title, !t.isEmpty {
+                        Text(t)
+                            .font(Typo.bodyS)
+                            .foregroundStyle(C.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    // 这一行是提醒的正文 ——
                     // 保存前能看见它，是这一屏存在的意义。
                     Text(previewLine)
                         .font(Typo.bodyS)

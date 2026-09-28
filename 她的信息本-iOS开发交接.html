@@ -521,7 +521,7 @@ footer{border-top:1px solid var(--line);margin-top:60px;padding:26px 0;
       <div class="no">05</div>
       <div>
         <div class="nm">提醒 · 定时与场景</div>
-        <div class="ds">定时与场景两组卡片。右上角「新建提醒」是原设计里<b>没有落点</b>的入口 —— 本轮补上了 32 屏。这一屏还要显示场景点额度（已用 N/20），因为加满之后再设是不会响的。</div>
+        <div class="ds">定时与场景两组卡片，最后一块是「通知预览 · 手机上收到时是这样」。每张卡三行：<b>类型 · 时刻 / 事项 / 规则</b> —— 第三行说的是「什么时候」（定时：「每月 13 号 · 提前 1 天」；场景：「进入 300 米范围时提醒」），<b>不是把正文再印一遍</b>。右上角「新建提醒」是原设计里<b>没有落点</b>的入口 —— 本轮补上了 32 屏。场景组下面要显示额度（已用 N/20）：加满之后新设的那个<b>不报错、只是不响</b>，不摆出来用户只会以为是自己设错了。通知预览那三行照 <b>ReminderService 真发出去的东西</b>画，不是照着「通知大概长什么样」画 —— 发件人 = CFBundleDisplayName、标题 = content.title（记录标题，为空时真机上也没有这一行）、正文 = content.body。少画一行，这块预览就只是在猜。</div>
       </div>
       <div class="keys"><span class="key">纯 UI</span><span class="key api">UNUserNotification</span><span class="key api">CoreLocation</span></div>
     </div>

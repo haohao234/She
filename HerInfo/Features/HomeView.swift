@@ -921,6 +921,33 @@ struct ReminderListView: View {
                         // 触发点系统给不了 —— 见 `ReminderEditorView.presetPlaces`。
                         groupLabel("场景提醒 · 到了这些地方主动提醒我")
                         ForEach(geoReminders) { reminderCard($0) }
+
+                        // 额度摆到明面上（画布 `3:1032`）。**这行的作用是挡一次静默失败**：
+                        // iOS 单个 App 最多同时监听 20 个 `CLCircularRegion`，
+                        // 到顶之后新加的那一个不会报错、只是不生效 ——
+                        // 用户看到的是「设了、不响」，而这一屏看上去一切正常。
+                        // 数字从 `ReminderService` 读、**不写死**：写死的那个 3
+                        // 会在用户真的加了第四个场景点那天变成一句假话。
+                        // ⚠️ 措辞取**画布 05 `3:1032` 的原文**（定稿）。
+                        // 原型那份写着「… —— iOS 单个 App 最多同时监听 20 个地点，
+                        // 到顶就只能关掉一个再加」，比画布长一截 ——
+                        // 两份交付物在这个句子上本来就对不上，这里以画布为准，
+                        // 差异已记进当日日志，等用户拍板要不要统一。
+                        Text("场景点已用 \(ReminderService.shared.usedGeofences) / \(ReminderService.maxGeofences)，到顶要先关掉一个再加")
+                            .font(Typo.caption)
+                            .foregroundStyle(C.ink3)
+                            .padding(.horizontal, 4)
+                    }
+
+                    // 通知预览（画布 `3:402`）。05 屏此前没有这一块，而它正是
+                    // 这一屏存在的理由之一：用户设了三四条提醒，却没有任何地方
+                    // 能看见它们到了手机上长什么样。
+                    //
+                    // 样本取**第一条还开着的提醒** —— 它是列表里最可能真的要响的那条；
+                    // 一条提醒都没有时不画（没有样本可摆，画个空壳只会让人以为坏了）。
+                    if let sample = reminders.first(where: { $0.isOn }) ?? reminders.first {
+                        groupLabel("通知预览 · 手机上收到时是这样")
+                        notificationPreviewCard(sample)
                     }
 
                     if reminders.isEmpty {
@@ -1051,17 +1078,74 @@ struct ReminderListView: View {
         }
     }
 
-    /// 卡片第三行。**只在它比正文多说了点什么时才返回值。**
+    /// 卡片第三行：**这条提醒落在什么时候**（画布 05 四张卡里叫「规则」的那一行）。
     ///
-    /// 两个理由，都是「同一句话在卡上出现两遍」：
-    ///   · 定时 + 准时：`previewLine` 就等于正文本身，照画会印两遍；
-    ///   · 场景：「到哪儿」第一行那个「场景 · 到「公司」附近」已经说过了，
-    ///     所以这一档改成说范围 —— 那才是它多余的信息。
+    /// 这一行此前对定时提醒用的是 `previewLine`，于是把正文又印了一遍
+    /// （「恋爱纪念日 · 提前订蛋糕」下面又一行「… · 提前 1 天」），
+    /// **而重复规则一个字都没说** —— 05 上一条每月、一条每年，卡面看不出区别。
+    /// 现在两组各说各的「什么时候」：定时说规则 + 余量，场景说半径。
+    /// 算法在 `Reminder.whenLine`，与 32 屏那行小字同一处。
+    ///
+    /// 那一道去重网留着：措辞一变、`whenLine` 与正文撞在一起时，
+    /// 宁可少画一行，也不要把同一句话在卡上印两遍。
     private func detailLine(_ m: Reminder) -> String? {
-        let s = m.kind == .geo
-            ? "进入 \(Int(m.radius)) 米范围时提醒"
-            : m.previewLine
+        let s = m.whenLine
         return s == m.message ? nil : s
+    }
+
+    /// 05 屏底部那块「手机上收到时是这样」（画布 `3:402`）。
+    ///
+    /// **三行照 `ReminderService.scheduleDate` 真发出去的东西画**，
+    /// 不是照着「通知大概长什么样」画：
+    ///   · 发件人 = `CFBundleDisplayName`（系统自己在横幅顶上印的那一行）；
+    ///   · 标题 = `content.title`（= 记录的标题，为空时真机上也没有这一行）；
+    ///   · 正文 = `content.body`（= `Reminder.previewLine`）。
+    /// 少画一行，这块预览就只是在猜 —— 而它整块存在的意义就是**不猜**。
+    ///
+    /// 字号取画布 05 的 13 / 12：标题用 `Typo.bodyS`，正文退到 `Typo.caption`。
+    /// 刻意**不新造一个 12/400 的令牌** —— 为了 1pt 在令牌表里加一档，
+    /// 换来的是规范页与代码又多一处要对齐的东西，不划算。
+    private func notificationPreviewCard(_ m: Reminder) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(C.primary)
+                    .frame(width: 26, height: 26)
+                    .overlay(
+                        // 描边铃铛，不是实心的 —— 画布 `3:406` 那个图标就是一条描边。
+                        Image(systemName: "bell")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.white)
+                    )
+                // 与 32 屏那块预览用**同一个字面量**：真机上系统印的就是它，
+                // 这里要是写个别的名字，预览与实物又不是同一个东西了。
+                Text("我的宝宝江林桐")
+                    .font(Typo.caption)
+                    .foregroundStyle(C.ink2)
+                Spacer(minLength: 0)
+                Text("现在")
+                    .font(Typo.caption)
+                    .foregroundStyle(C.ink3)
+            }
+            if !m.title.isEmpty {
+                Text(m.title)
+                    .font(Typo.bodyS)
+                    .foregroundStyle(C.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text(m.previewLine)
+                .font(Typo.caption)
+                .foregroundStyle(C.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(C.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(C.line, lineWidth: 1)
+        )
+        .shadow(color: Shadow.l2Color, radius: Shadow.l2Radius, y: Shadow.l2Y)
     }
 }
 

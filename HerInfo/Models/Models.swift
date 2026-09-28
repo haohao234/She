@@ -338,6 +338,53 @@ final class Reminder {
         return leadMinutes == 0 ? message : "\(message) · 提前 \(leadText(for: leadMinutes))"
     }
 
+    /// 05 屏卡片第三行：**这条提醒落在什么时候**。
+    ///
+    /// 两路说的不是同一件事，所以两句话也不一样：
+    ///   · 定时 → 重复规则 + 余量（「每月 13 号 · 提前 1 天」）。
+    ///     `time` 那个时刻第一行已经念过（「定时 · 20:30」），
+    ///     所以这一行多出来的是「哪一天」与「提前多少」。
+    ///   · 场景 → 半径（「进入 300 米范围时提醒」）。场景这一路没有提前量可言，
+    ///     「多近算到」是它唯一的「什么时候」。
+    ///
+    /// 这一行此前对定时提醒用的是 `previewLine`，于是把正文又印了一遍
+    /// （「恋爱纪念日 · 提前订蛋糕 · 提前 1 天」），**而重复规则一个字都没说** ——
+    /// 05 屏上一条每月、一条每年，卡面上完全看不出区别。
+    var whenLine: String {
+        guard kind == .date else { return "进入 \(Int(radius)) 米范围时提醒" }
+        let when = Self.makeRepeatLine(rule: repeatRule, weekday: weekday ?? 4,
+                                       time: time, dayOfMonth: dayOfMonth)
+        return leadMinutes == 0 ? when : "\(when) · 提前 \(Self.leadText(for: leadMinutes))"
+    }
+
+    /// 上面那一行的**唯一算法** —— 32 屏大时间右边那行小字也调它。
+    ///
+    /// 做成静态纯函数与 `makePreviewLine` 同一个理由：编辑器手里只有几个
+    /// `@State`、还没有 `Reminder` 对象，各写一遍两句话迟早会分叉。
+    ///
+    /// `weekday` 越界要**夹住**而不是崩：它在模型里是 `Int?`，老数据可能是 0 或 nil。
+    static func makeRepeatLine(rule: RepeatRule, weekday: Int, time: Date,
+                               dayOfMonth: Int?) -> String {
+        switch rule {
+        case .weekly:
+            // **上限是 7，不是 6。** 下标 1…7 才对应周日…周六；
+            // 写 6 的话周六会被夹成周五 —— 一个只在周六才出现、所以很难被撞见的错。
+            return weekdayNames[min(max(weekday, 1), 7)]
+        case .daily:   return "每天"
+        case .monthly: return "每月 \(dayOfMonth ?? Calendar.current.component(.day, from: time)) 号"
+        case .yearly:  return "每年 \(time.monthDayCN)"
+        case .none:    return "\(time.monthDayCN) · 仅一次"
+        }
+    }
+
+    /// 星期几的名字。`Calendar` 里 1 = 周日、7 = 周六 —— 与 `weekday` 的约定一致。
+    /// 下标 0 特意留空串：这样 1…7 可以直接当下标用，不必到处 `- 1`。
+    /// **定义只留这一处** —— 05 卡片那一行和 32 屏的星期胶囊念的是同一句话。
+    static let weekdayNames = ["", "周日", "周一", "周二", "周三", "周四", "周五", "周六"]
+
+    /// 星期胶囊的选项值。
+    static let weekdayOptions = [1, 2, 3, 4, 5, 6, 7]
+
     var leadLabel: String { Self.leadText(for: leadMinutes) }
 
     static func leadText(for m: Int) -> String {
