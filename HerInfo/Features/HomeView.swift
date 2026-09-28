@@ -1105,6 +1105,10 @@ struct ReminderListView: View {
     /// 字号取画布 05 的 13 / 12：标题用 `Typo.bodyS`，正文退到 `Typo.caption`。
     /// 刻意**不新造一个 12/400 的令牌** —— 为了 1pt 在令牌表里加一档，
     /// 换来的是规范页与代码又多一处要对齐的东西，不划算。
+    ///
+    /// **这块卡刻意不带描边**（画布 `3:404` 的 `strokes` 是空的）：别的卡都有
+    /// L0 那圈 `C.line`，这一块是照 iOS 通知横幅的样子画的 —— 靠投影浮起来、
+    /// 不靠描边。内距 12 / 行距 8 / 圆角 22 也都取画布的值，不是 `SCard` 的默认。
     private func notificationPreviewCard(_ m: Reminder) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -1138,13 +1142,9 @@ struct ReminderListView: View {
                 .foregroundStyle(C.ink2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(14)
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(C.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(C.line, lineWidth: 1)
-        )
         .shadow(color: Shadow.l2Color, radius: Shadow.l2Radius, y: Shadow.l2Y)
     }
 }
