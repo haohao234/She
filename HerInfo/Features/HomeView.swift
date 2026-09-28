@@ -626,16 +626,23 @@ struct SearchView: View {
 
     // MARK: 命中与呈现
 
-    /// 搜索命中：**分类范围 + 搜索词**。
+    /// 搜索命中：**分类范围 + 搜索词（标题 / 正文 / 标签）**。
     ///
     /// 刻意**不含** 30 屏那三组条件 —— 「已筛掉 M 条」里的 M 说的正是
     /// 「被那三组砍掉了多少」，分子分母都得建立在「命中」上。
+    ///
+    /// **标签必须一起搜。** 画布 28 屏写着「搜索会同时找标题、正文和标签。
+    /// 搜「白玫瑰」比搜「花」更容易命中」—— 而这一屏的整套用法就是
+    /// 「先打标签、以后按标签找」。2026-09-28 之前 `hits` 只比 title 与 body，
+    /// 标签一个字都没进过索引：不崩、不报错、不坏数据，只是用户按标签搜的时候
+    /// 一条都搜不出来，会以为记录丢了（守卫见 `check-swift.js` 同名一节）。
     private var hits: [Record] {
         records.filter { r in
             if let scope, r.cat != scope { return false }
             guard !q.isEmpty else { return true }
             return r.title.localizedStandardContains(q)
                 || r.body.localizedStandardContains(q)
+                || r.tags.contains { $0.localizedStandardContains(q) }
         }
     }
 
