@@ -479,7 +479,19 @@ struct RecordCard: View {
                     }
                     ForEach(record.tags, id: \.self) { t in
                         // 记录卡底部的标签：画布上是 10 号（`3:155`），不是 12。
-                        Pill(text: t, size: .tag)
+                        //
+                        // **命中时整枚走高亮那一对令牌**（`hiBg` / `hiInk`），
+                        // 与标题正文的 `highlighted()` 是同一个视觉语言。胶囊的文字
+                        // 是纯 `String`，没法只标其中一小段，所以整枚标出来。
+                        // 不补这一步的话，搜索会因为命中标签而返回一条
+                        // **哪里都不高亮**的记录 —— `highlighted` 只认标题与正文。
+                        // ⚠️ 参数顺序按 `Pill` 的存储属性写（text / style / tint /
+                        //    soft / size / emphasis / textTint / onTap），
+                        //    把 `size:` 写到 `soft:` 前面会被 check-argorder 拦下。
+                        Pill(text: t,
+                             soft: isSearchHit(t, highlight) ? C.hiBg : C.fill,
+                             size: .tag,
+                             textTint: isSearchHit(t, highlight) ? C.hiInk : nil)
                     }
                 }
             }
@@ -1306,6 +1318,18 @@ func highlighted(_ text: String, _ term: String?) -> AttributedString {
         from = hit.upperBound
     }
     return out
+}
+
+/// `highlighted` 的**布尔版**：同一套判据，给吃不了 `AttributedString` 的地方用 ——
+/// 记录卡底部那排标签胶囊，文字是纯 `String`，塞不进富文本，只能整枚标出来。
+///
+/// **判据必须与 `highlighted` 逐字同源。** 搜索命中从 2026-09-28 起包含标签，
+/// 而 `highlighted` 只作用于标题与正文 —— 两边不同源就会出现一条
+/// **哪里都不高亮**的记录，正是上面那句「搜得到、但高亮不出来」。
+/// 改一处就要回头看一眼另一处。
+func isSearchHit(_ text: String, _ term: String?) -> Bool {
+    guard let term, !term.isEmpty else { return false }
+    return text.range(of: term, options: [.caseInsensitive, .diacriticInsensitive]) != nil
 }
 
 extension Date {
