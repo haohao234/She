@@ -32,18 +32,31 @@ import CoreLocation
 
 struct ReminderEditorView: View {
     @Binding var path: [Route]
-    /// 提醒挂在哪条记录上。nil = 还没选（从 05 屏的「新建提醒」进来时的状态）。
-    let recordID: String?
-    /// 是不是在改一条已经存在的提醒（05 屏点条目进来的那条路）。
+
+    /// 编辑哪一条提醒。nil = 新建。
     ///
-    /// 只看它换标题 —— 因为「新建到一半、目标记录早就有一条提醒」这种情况
-    /// 走的是同一段读写逻辑，不该长成第二套界面。
-    var isEditing: Bool = false
+    /// **按提醒 id、不按记录 id。** 2026-10-27 起提醒可以不挂记录，
+    /// 按记录 id 找的话这一类根本进不来（见 `Route.reminderEdit`）。
+    var reminderID: String? = nil
+
+    /// 新建时预选一条记录。nil = 自由编辑（不关联任何记录）。
+    ///
+    /// 「必须选一条记录才能建提醒」是这一屏此前的硬门槛 ——
+    /// 而用户想记的常常是「周三记得订花」这种没有对应记录的事。
+    var presetRecordID: String? = nil
 
     @Environment(\.modelContext) private var ctx
 
+    /// 正在编辑的那一条（nil = 新建）。
+    ///
+    /// **不能像以前那样靠 `record.reminder` 反查** —— 自由编辑的提醒
+    /// 根本不在任何 `record` 上，反查永远是 nil。
+    @State private var existing: Reminder?
+
     @State private var kind: ReminderKind = .date
     @State private var targetRecord: Record?
+    /// 「自由编辑」时用户自己写的标题。挂了记录时不用它（标题取那条记录的）。
+    @State private var freeTitle = ""
     /// 默认值取自 12 屏「默认提醒时间」那一行（**设计稿给的是 20:30**）。
     /// 此前这里写死 20:00、且设置页没有那一行，于是这个时间无处可改。
     @State private var time = ReminderService.defaultTime
@@ -61,8 +74,32 @@ struct ReminderEditorView: View {
 
     @State private var showRecordPicker = false
     @State private var showTimePicker = false
+    @State private var showDeleteConfirm = false
 
     private let leadOptions = [0, 10, 60, 60 * 24]
+
+    /// 是不是在改一条已经存在的提醒。
+    private var isEditing: Bool { reminderID != nil }
+
+    /// 这条提醒最终写进 `content.title` 的那一行 —— 也就是通知的第一行。
+    ///
+    /// 挂记录 → 那条记录的标题（与 `ReminderService.userInfo` 一致）；
+    /// 自由编辑 → 用户自己写的标题。预览与实物读的是同一个值，
+    /// 不然又会出现「预览里看到的话和真发出去的话不是同一句」。
+    private var resolvedTitle: String {
+        if let rec = targetRecord { return rec.title }
+        return freeTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 通知正文那一句。
+    ///
+    /// 自由编辑时「提醒文案」可以留空 —— 那时把标题接过来当正文。
+    /// **不能留空**：`content.body` 为空的通知在锁屏上只剩一行标题，
+    /// 看起来像一条没写完的消息；而用户其实只是把标题写在了标题框里。
+    private var resolvedMessage: String {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? resolvedTitle : text
+    }
 
     /// 场景的四个触发点。
     ///
@@ -96,8 +133,15 @@ struct ReminderEditorView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: S.cardGap) {
 
-                    // ① 提醒对象：提醒挂的是「一条记录」，不是一个自由文本。
-                    //    这样点开通知能直接回到那条记录 —— 否则通知只是一句话，没有落点。
+                    // ① 提醒对象 —— **可选**。
+                    //
+                    // 以前这里是硬门槛：不选一条记录就存不下去。可用户想记的
+                    // 常常是「周三记得订花」这种没有对应记录的事 ——
+                    // 为了建一条提醒，先被迫去造一条记录，那是本末倒置。
+                    //
+                    // 现在两条路，各自说清代价：
+                    //   · 选一条记录 → 通知标题取那条记录的标题，点通知能跳回那条记录；
+                    //   · 不选（自由编辑）→ 自己写标题，提醒照样响，只是点通知没有落点。
                     SCard {
                         HStack {
                             Text("提醒对象")
@@ -105,7 +149,7 @@ struct ReminderEditorView: View {
                                 .foregroundStyle(C.ink3)
                             Spacer()
                             Button { showRecordPicker = true } label: {
-                                Text(targetRecord == nil ? "选择一条记录" : "更换")
+                                Text(targetRecord == nil ? "选一条记录" : "更换")
                                     .font(Typo.pillSel)
                                     .foregroundStyle(C.primary)
                             }
@@ -114,10 +158,25 @@ struct ReminderEditorView: View {
                             Circle()
                                 .fill(targetRecord?.cat.tint ?? C.ink3)
                                 .frame(width: 8, height: 8)
-                            Text(targetRecord?.title ?? "还没有选")
+                            Text(targetRecord?.title ?? "自由编辑 · 不关联记录")
                                 .font(Typo.body)
                                 .foregroundStyle(targetRecord == nil ? C.ink3 : C.ink)
                             Spacer(minLength: 0)
+                            // 断开记录**不丢字**：那段标题搬进下面的标题框（见 `unlinkRecord`）。
+                            if targetRecord != nil {
+                                Button("取消关联") { unlinkRecord() }
+                                    .font(Typo.caption)
+                                    .foregroundStyle(C.ink3)
+                            }
+                        }
+
+                        // 只有自由编辑才需要标题 —— 挂记录时那一行由记录提供。
+                        if targetRecord == nil {
+                            Rectangle().fill(C.line).frame(height: 1)
+                            FieldBlock(label: "标题") {
+                                SField(placeholder: "这条提醒叫什么，比如「订一束白玫瑰」",
+                                       text: $freeTitle)
+                            }
                         }
                     }
 
@@ -164,12 +223,35 @@ struct ReminderEditorView: View {
                         Image(systemName: "info.circle")
                             .font(.system(size: 13))
                             .foregroundStyle(C.ink2)
-                        Text(kind == .date
-                             ? "到点会推送一条通知，点开直接回到这条记录"
-                             : "到你设的地方附近时会推送一条通知，点开回到这条记录")
+                        // **措辞跟着「有没有关联记录」变。**
+                        // 自由编辑的提醒点开没有落点可跳 —— 还写「点开回到这条记录」
+                        // 就是一句兑现不了的承诺。
+                        Text(targetRecord == nil
+                             ? (kind == .date
+                                ? "到点会推送一条通知。没有关联记录，点开就停在提醒列表"
+                                : "到你设的地方附近时会推送一条通知。没有关联记录，点开停在提醒列表")
+                             : (kind == .date
+                                ? "到点会推送一条通知，点开直接回到这条记录"
+                                : "到你设的地方附近时会推送一条通知，点开回到这条记录"))
                             .font(Typo.caption)
                             .foregroundStyle(C.ink2)
                             .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    // 删除 —— **只在编辑态出现**。新建到一半没有「删除」可言。
+                    //
+                    // 05 屏卡片上也有一个垃圾桶，两处都留着：列表里是「扫一眼就删掉」，
+                    // 编辑器里是「点进去看清楚了再删」。这是同一个人在不同时刻的两种意图。
+                    if isEditing {
+                        Button { showDeleteConfirm = true } label: {
+                            Text("删除这条提醒")
+                                .font(Typo.pillSel)
+                                .foregroundStyle(C.danger)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: PillSize.regular.height)
+                                .background(C.fill, in: Capsule(style: .continuous))
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, S.screen)
@@ -182,6 +264,12 @@ struct ReminderEditorView: View {
             RecordPickerSheet(picked: $targetRecord)
         }
         .sheet(isPresented: $showTimePicker) { timePickerSheet }
+        .alert("删除这条提醒？", isPresented: $showDeleteConfirm) {
+            Button("删除", role: .destructive) { deleteExisting() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后不再提醒，也不能恢复。已有记录不受影响。")
+        }
         .task { loadTarget() }
     }
 
@@ -444,8 +532,11 @@ struct ReminderEditorView: View {
                     //
                     // 标题为空时不画标题行：记录只加了图、没写字的那种，
                     // 真机上也没有这一行。**预览不编**，编了就等于又骗一次。
-                    if let t = targetRecord?.title, !t.isEmpty {
-                        Text(t)
+                    // 标题读 `resolvedTitle` —— **和 `content.title` 是同一个值**。
+                    // 以前读的是 `targetRecord?.title`，自由编辑时永远是 nil，
+                    // 于是预览少画一行，而真机上那一行是存在的。
+                    if !resolvedTitle.isEmpty {
+                        Text(resolvedTitle)
                             .font(Typo.bodyS)
                             .foregroundStyle(C.ink)
                             .fixedSize(horizontal: false, vertical: true)
@@ -476,7 +567,7 @@ struct ReminderEditorView: View {
     /// 预览和实物不是同一句话，那一块预览就白设了。
     private var previewLine: String {
         Reminder.makePreviewLine(kind: kind,
-                                 message: message,
+                                 message: resolvedMessage,
                                  placeName: placeName.isEmpty ? nil : placeName,
                                  leadMinutes: leadMinutes)
     }
@@ -543,37 +634,96 @@ struct ReminderEditorView: View {
     // MARK: 读写
 
     private func loadTarget() {
-        guard let rid = recordID else { return }
-        // `#Predicate` 的泛型参数要写出来。省略时靠上下文推断，
-        // 而宏展开发生在类型检查之前，推断失败时报的是「无法推断 Predicate 的类型」，
-        // 那个错误信息不会指向这里。
+        // 编辑：按**提醒 id** 取那一条 —— 挂不挂记录都取得到。
+        if let mid = reminderID {
+            // `#Predicate` 的泛型参数要写出来。省略时靠上下文推断，
+            // 而宏展开发生在类型检查之前，推断失败时报的是「无法推断 Predicate 的类型」，
+            // 那个错误信息不会指向这里。
+            let d = FetchDescriptor<Reminder>(predicate: #Predicate<Reminder> { $0.id == mid })
+            guard let m = try? ctx.fetch(d).first else { return }
+            existing = m
+            targetRecord = m.record
+            // 自由编辑的提醒，标题存在 `Reminder.title` 里 —— 搬回输入框。
+            // 挂着记录的那些不搬：那个标题属于记录，不该在这里被改成提醒自己的。
+            freeTitle = (m.record == nil) ? m.title : ""
+            apply(m)
+            return
+        }
+
+        // 新建：最多预选一条记录（05 屏的入口现在传 nil，这条路是给以后的
+        // 「从某条记录直接加提醒」留的）。
+        guard let rid = presetRecordID else {
+            // **自由编辑：把示例文案清掉。** 「该给她买白玫瑰了」是记录那一路的
+            // 示例句，留着它，用户得先删掉一行别人的话才能写自己的。
+            // 正文空着没关系 —— `resolvedMessage` 会拿标题顶上。
+            message = ""
+            return
+        }
         let d = FetchDescriptor<Record>(predicate: #Predicate<Record> { $0.id == rid })
         targetRecord = try? ctx.fetch(d).first
+        // 这条记录**已经有一条提醒**了 → 直接进编辑态。
+        // 不然用户要把整张表填完、按保存才被拦下，刚才那几分钟白写。
         if let m = targetRecord?.reminder {
-            message = m.message
-            kind = m.kind
-            leadMinutes = m.leadMinutes
-            repeatRule = m.repeatRule
-            time = m.time
-
-            // **下面这五项曾经漏掉，后果是「编辑即损坏」。**
-            //
-            // 它们不在上面那批里，于是进来看一眼再按保存，用户之前调好的东西
-            // 会被静默写回默认值：设的「每周一」变回周三（`weekday` 的默认 4）、
-            // 半径从 500 米变回 300、地点从「家」变回「公司」，
-            // 场景提醒的坐标被清成 nil（于是这条提醒再也不响）。
-            // 界面全程没有任何提示 —— 用户只会觉得「这功能自己会变」。
-            weekday = m.weekday ?? 4
-            radius = m.radius
-            placeName = m.placeName ?? "公司"
-            latitude = m.latitude
-            longitude = m.longitude
+            existing = m
+            apply(m)
         }
     }
 
+    /// 把一条已有提醒的字段灌进各个 `@State`。
+    ///
+    /// **少灌一项就是一处静默回退** —— 用户进来看一眼再按保存，
+    /// 那一项会被写回默认值，而界面全程没有提示。
+    private func apply(_ m: Reminder) {
+        message = m.message
+        kind = m.kind
+        leadMinutes = m.leadMinutes
+        repeatRule = m.repeatRule
+        time = m.time
+
+        // **下面这五项曾经漏掉，后果是「编辑即损坏」。**
+        //
+        // 它们不在上面那批里，于是进来看一眼再按保存，用户之前调好的东西
+        // 会被静默写回默认值：设的「每周一」变回周三（`weekday` 的默认 4）、
+        // 半径从 500 米变回 300、地点从「家」变回「公司」，
+        // 场景提醒的坐标被清成 nil（于是这条提醒再也不响）。
+        // 界面全程没有任何提示 —— 用户只会觉得「这功能自己会变」。
+        weekday = m.weekday ?? 4
+        radius = m.radius
+        placeName = m.placeName ?? "公司"
+        latitude = m.latitude
+        longitude = m.longitude
+    }
+
+    /// 断开记录 → **文字不丢**：把那段标题搬进自由编辑的标题框。
+    ///
+    /// 不搬的话，用户点一下「取消关联」，通知标题就凭空少了一行 ——
+    /// 而那行字原本是写得好好的。
+    private func unlinkRecord() {
+        if let rec = targetRecord, freeTitle.isEmpty { freeTitle = rec.title }
+        targetRecord = nil
+    }
+
+    /// 真删。跟 05 屏那个垃圾桶是同一套动作（见 `ReminderListView.remove`）。
+    private func deleteExisting() {
+        guard let m = existing else { return }
+        // **先取 id、再删对象**：删完再读属性读到的是墓碑。
+        let id = m.id
+        if let rec = m.record { rec.reminder = nil }
+        MissedReminders.shared.forget(id)
+        ctx.delete(m)
+        try? ctx.save()
+        Task { await ReminderService.shared.cancel(reminderID: id) }
+        path.removeLast()
+    }
+
     private func save() {
-        guard let rec = targetRecord else {
-            ToastCenter.shared.show("先选一条要提醒的记录")
+        // **不再强制选记录。** 标题是通知横幅上的第一行，所以它必须有 ——
+        // 挂记录时由那条记录提供，自由编辑时要用户自己写（见 `resolvedTitle`）。
+        // 之前这里是一句 `guard let rec = targetRecord else { 先选一条记录 }`，
+        // 于是「周三记得订花」这种没有对应记录的事，根本建不成提醒。
+        let title = resolvedTitle
+        guard !title.isEmpty else {
+            ToastCenter.shared.show("给这条提醒起个标题，或者选一条记录")
             return
         }
 
@@ -593,9 +743,23 @@ struct ReminderEditorView: View {
             return
         }
 
-        let m = rec.reminder ?? Reminder(kind: kind, title: rec.title, message: message)
+        // **一条记录最多挂一个提醒**（`Record.reminder` 的注释里写着这条规则）。
+        // 把一条自由提醒挂到「已经有提醒」的记录上，原来那条会静默变成孤儿 ——
+        // 它不再属于任何记录，却还在列表里、还会响。挡住，并说清该去哪删。
+        if let rec = targetRecord, let other = rec.reminder, other.id != existing?.id {
+            ToastCenter.shared.show("「\(rec.title)」已经有一条提醒了，先去列表里删掉它")
+            return
+        }
+
+        let m: Reminder
+        if let e = existing {
+            m = e
+        } else {
+            m = Reminder(kind: kind, title: title, message: resolvedMessage)
+            ctx.insert(m)
+        }
         m.kind = kind
-        m.title = rec.title
+        m.title = title
         m.repeatRule = repeatRule
         m.weekday = weekday
         m.time = time
@@ -618,10 +782,9 @@ struct ReminderEditorView: View {
         // 而界面上一切正常。用户报的「场景提醒没有实现」就是这一处。
         m.latitude = kind == .geo ? latitude : nil
         m.longitude = kind == .geo ? longitude : nil
-        m.message = message
+        m.message = resolvedMessage
         m.isOn = true
-        m.record = rec
-        if rec.reminder == nil { ctx.insert(m) }
+        m.record = targetRecord
         try? ctx.save()
 
         // **保存这一刻是授权意愿最强的瞬间**（他刚写完这条提醒），
@@ -662,6 +825,14 @@ struct RecordPickerSheet: View {
                             Text(r.cat.title)
                                 .font(Typo.caption)
                                 .foregroundStyle(C.ink3)
+                        }
+                        Spacer(minLength: 0)
+                        // **把「已经有了」提前说出来。** 不说的话，用户选完、
+                        // 写到一半按保存才被拦下（一条记录最多挂一个提醒），
+                        // 而那时候他已经不知道该删哪一条了。
+                        if r.reminder != nil {
+                            Pill(text: "已有提醒", style: .flat, soft: C.warm, size: .tag,
+                                 emphasis: false, textTint: C.ink3)
                         }
                     }
                 }

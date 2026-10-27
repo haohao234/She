@@ -21,7 +21,10 @@ enum Route: Hashable {
     case sortPin                      // 25 排序与置顶
     case reminders                    // 05 提醒 · 定时与场景
     case reminderNew(recordID: String?)  // 32 新建提醒（新）
-    case reminderEdit(recordID: String)  // 32 编辑已有提醒（05 点条目进来的那条路）
+    /// 32 编辑已有提醒。**按提醒 id 走、不按记录 id** ——
+    /// 2026-10-27 起提醒可以不挂记录（自由编辑那条路），
+    /// 按记录 id 找的话，这类提醒点进去会是一条空表单。
+    case reminderEdit(reminderID: String)
     case search                       // 04 搜索 · 全局查找
     case recordDetail(id: String)     // 31 记录详情
     case versionHistory(id: String)   // 07 历史版本 · 左右对比（新）
@@ -156,8 +159,9 @@ struct RootView: View {
     /// 挂在首页上的话，切到别的 tab 再切回来就会重算一遍，
     /// 而那时水位线早就推过了，算出来永远是 0（数字当着用户的面跳掉）。
     private func refreshMissedReminders() {
-        let d = FetchDescriptor<Record>(predicate: #Predicate<Record> { $0.deletedAt == nil })
-        MissedReminders.shared.refresh(records: (try? ctx.fetch(d)) ?? [])
+        // **取 `Reminder` 全表，不取「记录上挂着的那一批」。**
+        // 10-27 起提醒可以不挂记录，按记录取会整类漏掉。
+        MissedReminders.shared.refresh(reminders: (try? ctx.fetch(FetchDescriptor<Reminder>())) ?? [])
     }
 
     /// 权限从「发不出去」变成「能发」的那一次，**重排一遍已有提醒**。
@@ -173,8 +177,7 @@ struct RootView: View {
         defer { lastNotifyOn = on }
         guard on, lastNotifyOn == false else { return }
 
-        let d = FetchDescriptor<Record>(predicate: #Predicate<Record> { $0.deletedAt == nil })
-        ReminderService.shared.rescheduleAll((try? ctx.fetch(d)) ?? [])
+        ReminderService.shared.rescheduleAll(in: ctx)
     }
 
     private var mainStack: some View {
@@ -225,12 +228,12 @@ struct RootView: View {
                 case .reminders:
                     ReminderListView(path: $path)
                 case .reminderNew(let rid):
-                    ReminderEditorView(path: $path, recordID: rid)
-                case .reminderEdit(let rid):
+                    ReminderEditorView(path: $path, reminderID: nil, presetRecordID: rid)
+                case .reminderEdit(let mid):
                     // **同一个 `ReminderEditorView`，只是标题不同。**
                     // 不另写一屏「编辑提醒」：那一屏的字段、校验、通知预览
                     // 与新建态逐项相同，分成两个文件只会让以后改文案的人漏掉一半。
-                    ReminderEditorView(path: $path, recordID: rid, isEditing: true)
+                    ReminderEditorView(path: $path, reminderID: mid)
                 case .search:
                     // 被 push 上来时，「取消」= 退回上一层。
                     SearchView(path: $path, onCancel: { path.removeLast() })
@@ -305,6 +308,12 @@ struct HomeView: View {
 
     @Query private var profiles: [Profile]
 
+    /// **全部提醒。** 首页那两处（「下一条提醒」横条、统计里的「提醒规则」）
+    /// 以前都从 `records.compactMap(\.reminder)` 数 —— 10-27 起提醒可以不挂记录，
+    /// 那样数会把「自由编辑」建的那些整类漏掉：用户明明建了 3 条，
+    /// 首页写着「1 个提醒规则」。
+    @Query(sort: \Reminder.time) private var allReminders: [Reminder]
+
     /// 「N 条提醒已过期」那一格的数据源。**阅读它，不自己算** ——
     /// 算的动作在 `RootView`（起 App / 回前台各一次），见 `refreshMissedReminders`。
     @ObservedObject private var missedStore = MissedReminders.shared
@@ -327,7 +336,12 @@ struct HomeView: View {
     /// 最近一条还开着的提醒。首页那条暖色横条就是它 ——
     /// 首页不列全部提醒，只列**最近会发生的那一条**，因为首页是「看一眼就走」的地方。
     private var nextReminder: Reminder? {
-        records.compactMap(\.reminder).filter(\.isOn).first
+        allReminders.first { $0.isOn && $0.isActive }
+    }
+
+    /// 还开着的提醒条数。**含不挂记录的那些**（见 `allReminders` 的注释）。
+    private var activeReminderCount: Int {
+        allReminders.filter { $0.isOn && $0.isActive }.count
     }
 
     private var missedCount: Int { missedStore.items.count }
@@ -418,7 +432,7 @@ struct HomeView: View {
                             HStack(spacing: 0) {
                                 statBlock("\(records.count)", "记录条目")
                                 statBlock("\(records.filter { !$0.tags.isEmpty }.count)", "喜好标签")
-                                statBlock("\(records.compactMap(\.reminder).filter(\.isOn).count)", "提醒规则")
+                                statBlock("\(activeReminderCount)", "提醒规则")
                             }
                             .padding(.top, 4)
                         }
@@ -875,7 +889,12 @@ struct SearchView: View {
 
 struct ReminderListView: View {
     @Binding var path: [Route]
-    @Query(filter: #Predicate<Record> { $0.deletedAt == nil }) private var records: [Record]
+    /// **全部提醒。**
+    ///
+    /// 这里以前查的是 `Record`、再 `compactMap(\.reminder)` —— 那时提醒只能挂在记录上。
+    /// 2026-10-27 起 32 屏允许「自由编辑」不选记录，按记录取的话，
+    /// 这类提醒建完就**从列表里消失**（其实还在库里、还会响）。
+    @Query(sort: \Reminder.time) private var allReminders: [Reminder]
     @Environment(\.modelContext) private var ctx
 
     /// 「你没打开 App 的时候响过、但还没跟你说过」的那几条。
@@ -885,6 +904,11 @@ struct ReminderListView: View {
     /// 他刚看到「2 条提醒已过期」，还没来得及看是哪两条就没了。
     /// 所以这里是**读**，清空的时机交给「离开这一屏」（见 `.onDisappear`）。
     @ObservedObject private var missedStore = MissedReminders.shared
+
+    /// 等着确认删除的那一条。**非 nil 就是「确认框正开着」** ——
+    /// 不另存一个 Bool：两个状态各自变化时总有一步忘了同步，
+    /// 而这里一旦不同步，就是「框关掉了、点什么都没反应」。
+    @State private var pendingDelete: Reminder?
 
     /// 同 SearchView：它既是 tab 根、也会被 push 进来。
     private var backAction: (() -> Void)? {
@@ -973,6 +997,40 @@ struct ReminderListView: View {
         // 清空放在**离开**这一屏时，不放在进来时：进来就清的话，
         // 用户还没读到那两条，标记先没了（同一类顺序陷阱，第三次出现）。
         .onDisappear { missedStore.acknowledge() }
+        // 删除要二次确认。**一句话说清后果**（不再提醒、不能恢复）——
+        // 只写「确定删除吗」的框，用户点完才发现连通知都没了。
+        .alert("删除这条提醒？", isPresented: Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        )) {
+            Button("删除", role: .destructive) {
+                if let m = pendingDelete { remove(m) }
+                pendingDelete = nil
+            }
+            Button("取消", role: .cancel) { pendingDelete = nil }
+        } message: {
+            Text(pendingDelete.map { "「\($0.message)」删除后不再提醒，也不能恢复。" } ?? "")
+        }
+    }
+
+    /// 真删。
+    ///
+    /// **先把 id 取出来、再删对象。** 删完再去读它的属性，读到的是墓碑 ——
+    /// 本项目在 `Photo` 上踩过同一个坑（往已登记删除的对象上写值直接 `fatalError`），
+    /// 所以撤通知那一步走的是 `cancel(reminderID:)`、不是 `cancel(_:)`。
+    ///
+    /// 三件事一起做，少一件都留个尾巴：
+    ///   · 摘掉 `MissedReminders` 里那一份（否则 banner 的数字比列表多一条，
+    ///     而且那个对象已经是墓碑）；
+    ///   · 撤掉待发通知 + `snooze_` 副本 + 地理围栏（见 `cancel(reminderID:)`）；
+    ///   · 从库里删掉。
+    private func remove(_ m: Reminder) {
+        let id = m.id
+        if let rec = m.record { rec.reminder = nil }
+        missedStore.forget(id)
+        ctx.delete(m)
+        try? ctx.save()
+        Task { await ReminderService.shared.cancel(reminderID: id) }
     }
 
     /// 05 屏顶部那条「N 条提醒已过期」。
@@ -1005,7 +1063,14 @@ struct ReminderListView: View {
 
     // MARK: 列表
 
-    private var reminders: [Reminder] { records.compactMap(\.reminder) }
+    /// 列表要画的那一批：**回收站里那条记录的提醒不算**。
+    ///
+    /// 判据收在 `Reminder.isActive` 一处 —— 不挂记录的提醒恒为活跃，
+    /// 挂着的看那条记录有没有进回收站。这里别自己写 `record?.deletedAt == nil`：
+    /// 那是个 `Date??`，写错方向会把「自由编辑」那一类整批滤掉（见那个属性的注释）。
+    private var reminders: [Reminder] {
+        allReminders.filter(\.isActive)
+    }
     private var dateReminders: [Reminder] { reminders.filter { $0.kind == .date } }
     private var geoReminders:  [Reminder] { reminders.filter { $0.kind == .geo } }
 
@@ -1040,6 +1105,15 @@ struct ReminderListView: View {
                                  emphasis: true, textTint: C.primary)
                         }
                     }
+                    // **不挂记录的提醒要自己把标题念出来。**
+                    // 挂着记录的那些，标题就是那条记录的标题 —— 用户在上一条
+                    // 已经看过了，再印一遍是重复。而「自由编辑」的提醒没有记录可依，
+                    // 不印就等于把用户写的第一行吞了。
+                    if m.record == nil, !m.title.isEmpty, m.title != m.message {
+                        Text(m.title)
+                            .font(Typo.bodyS)
+                            .foregroundStyle(C.ink)
+                    }
                     Text(m.message)
                         .font(Typo.bodyS)
                         .foregroundStyle(C.ink)
@@ -1050,18 +1124,34 @@ struct ReminderListView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                // 以前这里是 `.constant(m.isOn)` —— 一个永远不动的常量绑定。
-                // 表现是「开关看得见、拨不动」，而且拨了也不会重排通知。
-                SoftSwitch(isOn: Binding(
-                    get: { m.isOn },
-                    set: { on in
-                        m.isOn = on
-                        try? ctx.save()
-                        Task {
-                            if on { await ReminderService.shared.schedule(m) }
-                            else  { await ReminderService.shared.cancel(m) }
-                        }
-                    }))
+                VStack(spacing: 8) {
+                    // 以前这里是 `.constant(m.isOn)` —— 一个永远不动的常量绑定。
+                    // 表现是「开关看得见、拨不动」，而且拨了也不会重排通知。
+                    SoftSwitch(isOn: Binding(
+                        get: { m.isOn },
+                        set: { on in
+                            m.isOn = on
+                            try? ctx.save()
+                            Task {
+                                if on { await ReminderService.shared.schedule(m) }
+                                else  { await ReminderService.shared.cancel(m) }
+                            }
+                        }))
+
+                    // **每条提醒都要能删。** 05 屏此前只有「开关」——
+                    // 关掉只是不再响，条目还留在列表里；而用户想的是「这条不要了」。
+                    // 图标放在开关下面、不挤在左边：它是低频且不可逆的动作，
+                    // 不该和「改时间」抢同一个视觉层级。
+                    Button { pendingDelete = m } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 13, weight: .regular))
+                            .foregroundStyle(C.danger)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("删除这条提醒")
+                }
             }
         }
         // **整张卡可点进编辑。**
@@ -1072,16 +1162,14 @@ struct ReminderListView: View {
         //
         // `contentShape` 不能省：SCard 的内容在纵向是「文字多高就多高」，
         // 不铺满卡片时点在空白处不响应，而空白处恰恰占了大半张卡。
-        // 开关那一下不会走到这里 —— `SoftSwitch` 内层有自己的手势，先响应。
+        // 开关与垃圾桶那两下不会走到这里 —— 内层控件自己的手势先响应。
+        //
+        // **按提醒 id 进编辑，不按记录 id。** 10-27 起提醒可以不挂记录，
+        // 按记录找的话，那类提醒点进去是一条空表单（更早的写法甚至会弹
+        // 「没有关联的记录，删掉重建一条」—— 而它本来就该能编辑）。
         .contentShape(Rectangle())
         .onTapGesture {
-            guard let rid = m.record?.id else {
-                // 提醒理论上都挂在记录上。真出现悬空的要如实说一句 ——
-                // 静默什么都不发生，用户只会以为「点不动」。
-                ToastCenter.shared.show("这条提醒没有关联的记录，删掉重建一条")
-                return
-            }
-            path.append(.reminderEdit(recordID: rid))
+            path.append(.reminderEdit(reminderID: m.id))
         }
     }
 

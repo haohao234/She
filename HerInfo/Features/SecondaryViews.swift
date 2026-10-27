@@ -315,8 +315,7 @@ struct SettingsView: View {
         notifyStatus = s
         guard s == .authorized || s == .provisional || s == .ephemeral else { return }
 
-        let d = FetchDescriptor<Record>(predicate: #Predicate<Record> { $0.deletedAt == nil })
-        ReminderService.shared.rescheduleAll((try? ctx.fetch(d)) ?? [])
+        ReminderService.shared.rescheduleAll(in: ctx)
     }
 
     /// 12 屏「默认提醒时间」的选择器。

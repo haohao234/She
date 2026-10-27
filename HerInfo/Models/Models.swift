@@ -275,6 +275,21 @@ final class Reminder {
 
     var record: Record?
 
+    /// 这条提醒该不该出现在「活跃」的位置（列表、首页横条、过期补发、启动重排）。
+    ///
+    /// **不挂记录 = 活跃。** 2026-10-27 起提醒可以独立存在（32 屏允许自由编辑），
+    /// 它不属于任何记录，也就谈不上「记录进了回收站」。
+    ///
+    /// ⚠️ **别把这里写成 `record?.deletedAt == nil`。** 那个表达式的类型是
+    /// `Date??`：「记录在、且没进回收站」得到的是 `.some(nil)`，它**不等于** `nil`，
+    /// 于是判断整个反掉 —— 不挂记录的提醒会全部被过滤掉，
+    /// 而挂着的那些反而被当成「已删」。这一类可选值套可选值的坑，
+    /// 编译器不会拦，只会在界面上表现为「刚建好的提醒不见了」。
+    var isActive: Bool {
+        guard let rec = record else { return true }
+        return rec.deletedAt == nil
+    }
+
     // id 取 12 位，理由见 `Record.newID()`。
     init(id: String = "m_" + UUID().uuidString.prefix(12).lowercased(),
          kind: ReminderKind,

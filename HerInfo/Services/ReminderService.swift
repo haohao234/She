@@ -262,11 +262,14 @@ final class ReminderService: NSObject {
     /// 顺带一提，这条兜底**不依赖通知权限**：手机没电、静音、专注模式、
     /// 甚至用户压根没开通知 —— 只要那件事该响而没被看见，它就该出现在这里。
     /// 之前的实现只在「权限被拒」那条路上做文章，漏掉了更大的那一类。
-    nonisolated static func missed(_ records: [Record], now: Date = .now) -> [Reminder] {
+    nonisolated static func missed(_ reminders: [Reminder], now: Date = .now) -> [Reminder] {
         // 没有水位线 = 第一次用，不翻旧账。
         guard let seen = seenAt() else { return [] }
-        return records
-            .compactMap(\.reminder)
+        return reminders
+            // 收进回收站的记录，它挂着的提醒不该再冒出来 —— 26 屏承诺过
+            // 「挂着的提醒会一起取消」，这里再挡一道。
+            // 不挂记录的提醒恒为活跃（见 `Reminder.isActive`）。
+            .filter(\.isActive)
             .filter { r in
                 guard let fire = mostRecentFire(r, now: now) else { return false }
                 return fire > seen
@@ -581,11 +584,26 @@ final class ReminderService: NSObject {
     /// 启动时重排一次。**必须做** ——
     /// 卸载重装、重启、系统清理都会丢掉待发通知，而用户以为提醒还在。
     ///
+    /// ⚠️ **必须按 `Reminder` 全表重排，不能按「记录上挂着的提醒」重排。**
+    /// 2026-10-27 起提醒可以**不挂记录**（05 屏新建时选「自由编辑」），
+    /// 那些提醒在 `records.compactMap(\.reminder)` 里一条都看不见 ——
+    /// 用旧的写法，它们只在新建那一刻排上一次，重装或重启之后就再也不响了，
+    /// 而界面上它们还好好地列在那里。
+    ///
     /// 配图索引在这里建一次、所有提醒共用 —— 每条提醒各建一次就是 N 次全表扫描。
-    /// 上下文从记录自己身上取（启动那一步的调用方拿不到 `ModelContext`）。
-    func rescheduleAll(_ records: [Record]) {
+    func rescheduleAll(in ctx: ModelContext) {
+        let active = FetchDescriptor<Record>(predicate: #Predicate<Record> { $0.deletedAt == nil })
+        let records = (try? ctx.fetch(active)) ?? []
+        let reminders = (try? ctx.fetch(FetchDescriptor<Reminder>())) ?? []
+        rescheduleAll(records: records, reminders: reminders)
+    }
+
+    func rescheduleAll(records: [Record], reminders: [Reminder]) {
         let index = Self.photoIndex(from: records)
-        for r in records.compactMap(\.reminder) where r.isOn {
+        for r in reminders where r.isOn {
+            // 回收站里的记录不再排 —— 它的提醒在 `moveToTrash` 里已经被关掉了，
+            // 这里再挡一道，免得哪天那条路漏了。不挂记录的提醒恒为活跃。
+            guard r.isActive else { continue }
             Task { await schedule(r, photoIndex: index) }
         }
     }
@@ -689,13 +707,23 @@ final class MissedReminders: ObservableObject {
     @Published private(set) var items: [Reminder] = []
 
     /// 冷启动 / 回前台时调。**先算、后标** —— 顺序反了的话恒为空。
-    func refresh(records: [Record]) {
-        items = ReminderService.missed(records)
+    ///
+    /// 传的是**全部提醒**、不是「记录上挂着的那一批」：10-27 起提醒可以不挂记录，
+    /// 按记录取会把它们整类漏掉（见 `ReminderService.rescheduleAll(in:)`）。
+    func refresh(reminders: [Reminder]) {
+        items = ReminderService.missed(reminders)
         ReminderService.markSeen()
     }
 
     /// 用户离开了「提醒」那一屏 —— 这一批算告知完毕。
     func acknowledge() { items = [] }
+
+    /// 某一条被删了 —— 立刻从这一批里摘掉。
+    ///
+    /// **不这么做会留下一个指针和一个数字**：banner 上还写着「3 条提醒已过期」，
+    /// 而列表里只剩两条；`items` 里那个 `Reminder` 对象已经是墓碑，
+    /// 下次谁碰它的属性都可能炸。删完顺手摘一下，两件事一起解决。
+    func forget(_ id: String) { items.removeAll { $0.id == id } }
 }
 
 // MARK: - 通知到达

@@ -189,7 +189,7 @@ struct HerInfoApp: App {
 
             // ③ 重排提醒。卸载重装、重启、系统清理都会丢掉待发通知，
             // 而用户以为提醒还在。这是最容易漏、后果最重的一步。
-            ReminderService.shared.rescheduleAll(all)
+            ReminderService.shared.rescheduleAll(in: ctx)
         }
 
         // ④ 清掉没有任何地方引用的图片文件。
