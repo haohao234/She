@@ -21,6 +21,21 @@
 //      （旧数据没删，见 `storeResetKey`）。
 //  最坏的结果因此从「永久打不开」变成「数据在一边、App 能用」。
 //
+//  【2026-10-27 的事故：判据错了，代价是用户以为记录全没了】
+//  上面那套判据原来是「上次启动后 5 秒内就没了 ⇒ 当它崩了」。这个假设是错的：
+//  `finish()` 靠一个 5 秒的 `Task.sleep` 复位，而**用户上滑关掉、或系统回收，
+//  都不会等这 5 秒**。于是「打开看一眼就关」变成了「启动崩溃」：
+//      normal 那次没走完 → 下次 .safe
+//      .safe 那次也没走完 → 再下次 .rebuild → 整库搬走、新建空库
+//  真机上攒出了 **9 个 `broken-*` 目录**（10-21 ~ 10-27），而用户只是正常地
+//  开关 App。真正的数据在第一个目录里躺了六天，界面上却是一个空库。
+//
+//  ⇒ 判据改成**看「首屏有没有画出来」**，而不是看「有没有熬过 5 秒」：
+//    · `rendered == false` → 连界面都没出来，只能是启动期崩溃，降级是对的；
+//    · `rendered == true`  → 界面已经出来了。用户划掉、系统回收、锁屏后被杀，
+//      全都长这样，**一律不降级**，更不许 `.rebuild`。
+//  这一条把「谁能触发整库搬家」从「任何人手快关两次」收窄到「真的启动即崩」。
+//
 //  【为什么用文件而不是 UserDefaults 记状态】
 //  崩溃发生在启动后 100 多毫秒，而 UserDefaults 的写入是异步落盘的 ——
 //  它很可能赶不上。这里的标记正是「下次启动要知道这次崩了」的唯一依据，
@@ -53,6 +68,13 @@ enum LaunchGuard {
         var startedAt: TimeInterval
         /// 上次用的模式。`normal` / `safe` / `rebuild`。
         var mode: String
+        /// 首屏有没有真的画出来。
+        ///
+        /// **可选类型是故意留的**：10-27 之前的版本写出来的文件里没有这个键，
+        /// 而 `nil` 必须按「已渲染」处理（旧文件的 `startedAt > 0` 更可能是
+        /// 被划掉而不是崩溃）—— 升级后的第一次启动绝不能因此少一次降级判断，
+        /// 更不能因此触发 `.rebuild`。宁可放过一次真崩溃，也不能再搬一次库。
+        var rendered: Bool? = nil
     }
 
     private static func read() -> State? {
@@ -74,7 +96,8 @@ enum LaunchGuard {
         /// 代价是这一次启动不重排提醒、不清回收站、不清孤儿图片 —— 都会在
         /// 下一次正常启动时补上，所以最坏也就是「晚一次」。
         case safe
-        /// 上一次连保守启动都没走完 → 库整份挪走重建。
+        /// 上一次**连首屏都没画出来**（不是「被划掉」）→ 库整份挪走重建。
+        /// 这是全 App 唯一会动用户库文件的分支，判据必须严到「启动即崩」。
         case rebuild
     }
 
@@ -84,7 +107,7 @@ enum LaunchGuard {
     /// 这一轮是不是保守启动。
     static var isSafe: Bool { mode != .normal }
 
-    // MARK: - 两个动作
+    // MARK: - 三个动作
 
     /// 记下「这次启动了」—— **必须排在容器建立之前**。
     ///
@@ -99,26 +122,40 @@ enum LaunchGuard {
         // `finish()` 之后文件仍然在（它写的是 `startedAt = 0`），拿文件存在与否
         // 当判据会让每次正常启动都被当成崩溃重启。
         if let p = previous, p.startedAt > 0 {
-            // 上次的标记还没清 → 它没走到 `finish()`。而 `finish()` 是启动后
-            // **5 秒**才调用的（见 `HerInfoApp`），所以这里的含义是
-            // 「上次启动后 5 秒内就没了」—— 那只能是崩，或者被手动杀掉。
-            // 两种情况的处置是一样的，都值得走一次保守路径。
-            let last = Mode(rawValue: p.mode) ?? .normal
-            m = (last == .normal) ? .safe : .rebuild
+            // 上次没走到 `finish()`。**但不等于它崩了** —— 见文件头的 10-27 事故。
+            // 只有「首屏都没画出来」才算启动期崩溃；`rendered` 为 `true`
+            // 或 `nil`（旧版本文件）都按「界面已经出来过」处理，不降级。
+            if p.rendered == false {
+                let last = Mode(rawValue: p.mode) ?? .normal
+                m = (last == .normal) ? .safe : .rebuild
+            }
         }
 
         mode = m
-        write(State(startedAt: Date.now.timeIntervalSince1970, mode: m.rawValue))
+        write(State(startedAt: Date.now.timeIntervalSince1970, mode: m.rawValue, rendered: false))
         return m
+    }
+
+    /// 「首屏已经画出来了」—— 由 `RootView` 的 `.onAppear` 调用。
+    ///
+    /// 这一笔是整套判据里**最有信息量的一笔**：它把「启动期崩溃」和
+    /// 「打开后被划掉」彻底分开了。写进去之后，这一次启动无论怎么结束
+    /// （划掉、被系统回收、锁屏被杀），下一次都**不会**降级、更不会搬库。
+    ///
+    /// 只改 `rendered`，**不动 `startedAt`** —— 那个值是「这次启动从什么时候开始」，
+    /// 由 `begin()` 定，`finish()` 才负责清零。
+    static func markRendered() {
+        guard let cur = read(), cur.startedAt > 0, cur.rendered != true else { return }
+        write(State(startedAt: cur.startedAt, mode: cur.mode, rendered: true))
     }
 
     /// 启动流程真的走完了。
     ///
-    /// **故意延后到启动后 5 秒**（调用点在 `HerInfoApp`），而不是紧跟在
-    /// `bootstrap()` 后面 —— 因为用户报的「一点进去直接闪退」很可能发生在
-    /// 首屏渲染时，那已经在 `bootstrap()` 之后了。只认 `bootstrap()` 走完，
-    /// 这类崩溃就永远不会被记下来，保守路径也就永远不会启动。
+    /// **仍然延后到启动后 5 秒**（调用点在 `HerInfoApp`），因为它是给
+    /// `announceSafeLaunchIfAny` 用的「这一轮是否完整」的标记；
+    /// 但**它已经不再是「是否崩溃」的判据**了 —— 那件事交给 `markRendered()`，
+    /// 所以「5 秒内被划掉」不再有任何后果。
     static func finish() {
-        write(State(startedAt: 0, mode: Mode.normal.rawValue))
+        write(State(startedAt: 0, mode: Mode.normal.rawValue, rendered: true))
     }
 }
