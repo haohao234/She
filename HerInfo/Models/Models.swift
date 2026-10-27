@@ -908,7 +908,8 @@ enum HerInfoStore {
 
         let m = Reminder(kind: .date, title: "你们的纪念日",
                          repeatRule: .monthly, dayOfMonth: 10,
-                         time: Calendar.current.date(from: DateComponents(hour: 20, minute: 30))!,
+                         // 同上：`DateComponents(hour:minute:)` 会落到公元 1 年。
+                         time: ReminderService.today(atHour: 20, minute: 30),
                          leadMinutes: 10,
                          message: "该给她买白玫瑰了")
         m.record = r1

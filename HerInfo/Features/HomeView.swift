@@ -132,6 +132,17 @@ struct RootView: View {
             }
         }
         .background(C.bg)
+        // **整个 App 固定中文。**
+        //
+        // 工程里没有 `zh-Hans.lproj`，系统于是把「本 App 支持哪些语言」当成只有英文：
+        // `DatePicker` 的日期轮会画出 *October / Mon / AM*，而周围全是中文 ——
+        // 2026-10-27 用户报的「日期选择器把英文调成中文」就是这一处。
+        //
+        // 不做「跟随系统」：这一屏的文案、日期写法、星期名全按中文写的，
+        // 系统切成英文时混排比全英文更糟。`Info.plist` 里的
+        // `CFBundleDevelopmentRegion` / `CFBundleLocalizations` 是另一道保险，
+        // 管的是系统弹窗（通知权限那种）与 App Store 那一侧。
+        .environment(\.locale, Locale(identifier: "zh_Hans_CN"))
         .animation(.easeOut(duration: 0.28), value: hasOnboarded)
         .animation(.easeOut(duration: 0.18), value: locked)
         .task {

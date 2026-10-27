@@ -343,12 +343,44 @@ final class ReminderService: NSObject {
     /// 它只读 `UserDefaults`，没有任何需要隔离的状态。
     nonisolated static var defaultTime: Date {
         let d = UserDefaults.standard
-        guard d.object(forKey: defaultTimeKey) != nil else {
-            return Calendar.current.date(from: DateComponents(hour: 20, minute: 30)) ?? .now
+        let minutes: Int
+        if d.object(forKey: defaultTimeKey) == nil {
+            minutes = 20 * 60 + 30          // 设计稿给的是 20:30
+        } else {
+            minutes = max(0, min(24 * 60 - 1, d.integer(forKey: defaultTimeKey)))
         }
-        let minutes = max(0, min(24 * 60 - 1, d.integer(forKey: defaultTimeKey)))
-        return Calendar.current.date(from: DateComponents(hour: minutes / 60,
-                                                          minute: minutes % 60)) ?? .now
+        return today(atMinutes: minutes)
+    }
+
+    /// 「今天 00:00 起第 `minutes` 分钟」。
+    ///
+    /// ⚠️ **不要写 `Calendar.date(from: DateComponents(hour:minute:))`。**
+    /// 那个调用里没给的年月日会被当成 **1**，返回的是「公元 1 年 1 月 1 日 20:30」，
+    /// 不是今天。date wheel 只显示时分，看上去毫无异常；可这个值一进
+    /// 「仅一次」那一步的「有没有过去」判断，就永远是过去 ——
+    /// 2026-10-27 用户报的正是这个：定 12:00，11:11 就提示「已经过去了」。
+    nonisolated static func today(atMinutes minutes: Int) -> Date {
+        today(atHour: minutes / 60, minute: minutes % 60)
+    }
+
+    nonisolated static func today(atHour hour: Int, minute: Int) -> Date {
+        let cal = Calendar.current
+        var c = cal.dateComponents([.year, .month, .day], from: .now)
+        c.hour = hour
+        c.minute = minute
+        c.second = 0
+        return cal.date(from: c) ?? .now
+    }
+
+    /// 修历史数据：把「公元 1 年」那种时刻归到**今天**，时分不变。
+    ///
+    /// 只在这一种明显坏掉的形态上动手。正常 `time` 身上还带着「每月几号 / 每年几月」，
+    /// 无条件归到今天就等于把 13 号悄悄改成今天 —— 那是另一种损坏。
+    nonisolated static func normalize(_ date: Date) -> Date {
+        let cal = Calendar.current
+        guard cal.component(.year, from: date) < 2000 else { return date }
+        let c = cal.dateComponents([.hour, .minute], from: date)
+        return today(atHour: c.hour ?? 20, minute: c.minute ?? 30)
     }
 
     nonisolated static func setDefaultTime(_ date: Date) {

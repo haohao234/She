@@ -678,7 +678,11 @@ struct ReminderEditorView: View {
         kind = m.kind
         leadMinutes = m.leadMinutes
         repeatRule = m.repeatRule
-        time = m.time
+        // **老数据里可能是「公元 1 年」**：早期默认值用
+        // `DateComponents(hour:minute:)` 造，缺省年月日被填成 1。
+        // 那种时刻一进「仅一次」的过期判断就永远是过去，改时间也救不回来 ——
+        // 在这里归到今天（时分不变），下面 `save()` 会把它写回去。
+        time = ReminderService.normalize(m.time)
 
         // **下面这五项曾经漏掉，后果是「编辑即损坏」。**
         //
@@ -737,10 +741,20 @@ struct ReminderEditorView: View {
         // 「仅一次」选了个已经过去的时间 = 一条永远不响的提醒。
         // `UNCalendarNotificationTrigger` 不会为过去的时间报错，它就静静地什么都不做，
         // 用户那边表现为「设了、没响、也没提示」—— 又是那个最坏的形态。
-        if kind == .date, repeatRule == .none,
-           time.addingTimeInterval(-Double(leadMinutes) * 60) < .now {
-            ToastCenter.shared.show("这个时间已经过去了，换一个")
-            return
+        //
+        // 先归一化再判断：老数据里 `time` 可能是「公元 1 年」（见 `apply(_:)`），
+        // 不归一化的话，今天 12:00 也会被算成过去。
+        let fireTime = ReminderService.normalize(time)
+        if kind == .date, repeatRule == .none {
+            let trigger = fireTime.addingTimeInterval(-Double(leadMinutes) * 60)
+            guard trigger >= .now else {
+                // 两件事分开说，否则用户会以为是自己选错了时间：
+                // 前者是时间本身过去了，后者只是「提前量」那一截过去了。
+                ToastCenter.shared.show(fireTime < .now
+                    ? "这个时间已经过去了，换一个"
+                    : "提前 \(Reminder.leadText(for: leadMinutes)) 那一截已经过了，换「准时」或者往后挪一点")
+                return
+            }
         }
 
         // **一条记录最多挂一个提醒**（`Record.reminder` 的注释里写着这条规则）。
@@ -762,13 +776,13 @@ struct ReminderEditorView: View {
         m.title = title
         m.repeatRule = repeatRule
         m.weekday = weekday
-        m.time = time
+        m.time = fireTime
         // **`dayOfMonth` 此前从来没有被写过。** 少了它，`scheduleDate` 里
         // `comps.day = nil`，「每月」就会退化成「每天」响 —— 而界面上写着「每月」。
         // 值直接取 `time` 的那一天：用户是在时间选择器里选的，
         // 落一份下来只是为了让排程那一步不必再去问日历。
         m.dayOfMonth = (repeatRule == .monthly || repeatRule == .yearly)
-            ? Calendar.current.component(.day, from: time) : nil
+            ? Calendar.current.component(.day, from: fireTime) : nil
         // **场景提醒把提前量归零。** 界面上那一组在场景态是**不画的**（见上面 `if kind == .date`），
         // 于是它带着一个用户看不见、也改不了的旧值落库 —— 而
         // `Reminder.previewLine` 会把它印进通知正文，就出现了

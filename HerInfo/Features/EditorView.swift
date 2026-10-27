@@ -729,7 +729,10 @@ struct RecordEditorView: View {
                 m.isOn = true
                 Task { await ReminderService.shared.schedule(m) }
             } else {
-                let time = Calendar.current.date(from: DateComponents(hour: 20, minute: 0)) ?? .now
+                // **用「今天 20:00」，不是 `DateComponents(hour:minute:)`。**
+                // 后者缺省年月日会被填成 1，落到公元 1 年 —— 每周那一路只取时分
+                // 还能勉强工作，可一旦用户把它改成「仅一次」，那条提醒永远是过去。
+                let time = ReminderService.today(atHour: 20, minute: 0)
                 let m = Reminder(kind: .date,
                                  title: target.title,
                                  repeatRule: .weekly,

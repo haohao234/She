@@ -22,6 +22,19 @@
 	<key>CFBundleDisplayName</key>
 	<string>我的宝宝江林桐</string>
 
+	<!-- 语言：这个 App 只有中文。
+	     少了这两条，系统会认为「本 App 支持的本地化」只有英文 ——
+	     `DatePicker` 的月份轮、星期轮、上午/下午就会是英文
+	     （2026-10-27 用户报的「日期选择器是英文」）。
+	     SwiftUI 侧还有一道 `.environment(\.locale, …)`（见 RootView），
+	     管的是同一个 App 内所有系统控件；这两条管的是系统弹窗与包本身的声明。 -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>zh-Hans</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>zh-Hans</string>
+	</array>
+
 	<!-- ① 地理围栏（ReminderService）要的用途说明。
 	        没有它：区域监听注册不上去，场景提醒永远不响。 -->
 	<key>NSLocationWhenInUseUsageDescription</key>

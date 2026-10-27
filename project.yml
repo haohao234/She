@@ -27,6 +27,11 @@ options:
   deploymentTarget:
     iOS: "17.0"          # SwiftData 与自定义 Layout 的门槛；降到 16 要换回 Core Data
   createIntermediateGroups: true
+  # 工程是中文单语。这一行会写进 pbxproj 的 developmentRegion，
+  # 也是 GENERATE_INFOPLIST_FILE 那套样板键里 CFBundleDevelopmentRegion 的来源 ——
+  # 不写的话默认是 en，系统控件（日期轮的月份/星期/上午下午）会画成英文。
+  # Info.plist 里另有一份显式声明，两处要一致。
+  developmentLanguage: zh-Hans
 
 settings:
   base:
