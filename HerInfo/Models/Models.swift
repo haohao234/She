@@ -567,6 +567,32 @@ final class CyclePeriod {
     }
 }
 
+// MARK: - 性生活记录
+
+/// 一次性生活 = 一行。只记「哪一天」和「何时补记」，不存更私密的内容。
+///
+/// **不直接存一个每日次数**：逐次插入才能可靠撤销，也能避免用户连点时
+/// 需要先读出旧数字、再写回新数字的竞态。次数由界面按日期现算。
+@Model
+final class IntimacyRecord {
+
+    @Attribute(.unique) var id: String
+
+    /// 发生在哪一天。入库时归零到当地当天 00:00，跨时区/夏令时不参与计数。
+    var happenedOn: Date
+
+    /// 这一行什么时候补记的。同一天要撤销时，删最晚补记的那一行。
+    var createdAt: Date
+
+    init(id: String = "i_" + UUID().uuidString.prefix(12).lowercased(),
+         happenedOn: Date,
+         createdAt: Date = .now) {
+        self.id = id
+        self.happenedOn = Calendar.current.startOfDay(for: happenedOn)
+        self.createdAt = createdAt
+    }
+}
+
 // MARK: - 生理期统计
 
 /// 从一串 `CyclePeriod` 里算出来的全部派生量。
@@ -882,7 +908,9 @@ enum HerInfoStore {
         Revision.self,
         // 生理期（37~41 屏）。**新模型必须登记在这里** ——
         // 少写一个类型，运行时就是「找不到 model」的崩溃，编译期一声不吭。
-        CyclePeriod.self
+        CyclePeriod.self,
+        // 月历上的性生活记录。与 CyclePeriod 独立，不参与周期/排卵推算。
+        IntimacyRecord.self
     ])
 
     /// 应用用这个（落盘）。

@@ -52,7 +52,13 @@ struct CycleView: View {
                 } else {
                     ringCard
                     statRow
-                    CycleCalendarCard(stats: stats)
+                }
+
+                // 月历（含性生活记录）不依赖是否已有经期数据：
+                // 还没记过经期，也应当能先在某个日期记下一次性生活。
+                CycleCalendarCard(stats: stats)
+
+                if !stats.isEmpty {
                     recentCard
                 }
             }
@@ -221,6 +227,9 @@ struct CycleCalendarCard: View {
 
     let stats: CycleStats
 
+    @Environment(\.modelContext) private var ctx
+    @Query(sort: \IntimacyRecord.createdAt) private var intimacyRecords: [IntimacyRecord]
+
     @State private var displayedMonth = Date.now
     @State private var selectedDate = Date.now
 
@@ -278,10 +287,14 @@ struct CycleCalendarCard: View {
                 .foregroundStyle(C.ink2)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("排卵日与易孕期按 \(stats.averageCycle) 天周期估算，不是医学判断。")
-                .font(Typo.caption)
-                .foregroundStyle(C.ink3)
-                .fixedSize(horizontal: false, vertical: true)
+            intimacyRow
+
+            if !stats.isEmpty {
+                Text("排卵日与易孕期按 \(stats.averageCycle) 天周期估算，不是医学判断。")
+                    .font(Typo.caption)
+                    .foregroundStyle(C.ink3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(18)
         .background(C.card, in: RoundedRectangle(cornerRadius: R.card, style: .continuous))
@@ -320,6 +333,7 @@ struct CycleCalendarCard: View {
         let inMonth = cal.isDate(date, equalTo: displayedMonth, toGranularity: .month)
         let isToday = cal.isDateInToday(date)
         let selected = cal.isDate(date, inSameDayAs: selectedDate)
+        let dayIntimacy = intimacyCount(on: date)
 
         return Button {
             selectedDate = date
@@ -346,6 +360,14 @@ struct CycleCalendarCard: View {
                 Text(DateFormatter.cycleDay.string(from: date))
                     .font(.system(size: 13, weight: mark == .none ? .regular : .semibold).monospacedDigit())
                     .foregroundStyle(foreground(for: mark))
+                    .offset(y: dayIntimacy > 0 ? -2 : 0)
+                if dayIntimacy > 0 {
+                    // 与经期/排卵标记分开：爱心只表示「这一天有记录」，不参与健康推算。
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 6, weight: .semibold))
+                        .foregroundStyle(Category.trait_.tint)
+                        .offset(y: 12)
+                }
             }
             .frame(maxWidth: .infinity)
             .frame(height: 40)
@@ -409,6 +431,85 @@ struct CycleCalendarCard: View {
         case .none:
             return "\(day) · 没有经期或排卵标记"
         }
+    }
+
+    // MARK: 性生活次数
+
+    private var selectedIntimacyCount: Int { intimacyCount(on: selectedDate) }
+
+    private var monthIntimacyCount: Int {
+        intimacyRecords.filter {
+            cal.isDate($0.happenedOn, equalTo: displayedMonth, toGranularity: .month)
+        }.count
+    }
+
+    private var isFutureSelected: Bool {
+        cal.startOfDay(for: selectedDate) > cal.startOfDay(for: .now)
+    }
+
+    private func intimacyCount(on date: Date) -> Int {
+        intimacyRecords.filter { cal.isDate($0.happenedOn, inSameDayAs: date) }.count
+    }
+
+    private var intimacyRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Category.trait_.tint)
+                .frame(width: 28, height: 28)
+                .background(C.fill, in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("性生活")
+                    .font(Typo.bodyS)
+                    .foregroundStyle(C.ink)
+                Text("本月 \(monthIntimacyCount) 次 · 这一天 \(selectedIntimacyCount) 次")
+                    .font(Typo.caption)
+                    .foregroundStyle(C.ink3)
+            }
+
+            Spacer(minLength: 0)
+
+            Button { removeIntimacy() } label: {
+                Image(systemName: "minus")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(C.ink2)
+                    .frame(width: 30, height: 30)
+                    .background(C.fill, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedIntimacyCount == 0)
+            .opacity(selectedIntimacyCount == 0 ? 0.35 : 1)
+            .accessibilityLabel("撤销这一天的一次记录")
+
+            Button { addIntimacy() } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(C.primary)
+                    .frame(width: 30, height: 30)
+                    .background(C.warm, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isFutureSelected)
+            .opacity(isFutureSelected ? 0.35 : 1)
+            .accessibilityLabel("在这一天记一次性生活")
+            .accessibilityHint(isFutureSelected ? "未来日期不能记录" : "在选中的日期增加一次")
+        }
+    }
+
+    private func addIntimacy() {
+        guard !isFutureSelected else {
+            ToastCenter.shared.show("未来的日子还不能记")
+            return
+        }
+        IntimacyStore(context: ctx).add(on: selectedDate)
+        ToastCenter.shared.show("已记一次 · \(DateFormatter.cycleFull.string(from: selectedDate))")
+    }
+
+    private func removeIntimacy() {
+        guard selectedIntimacyCount > 0 else { return }
+        IntimacyStore(context: ctx).removeLatest(on: selectedDate, from: intimacyRecords)
+        ToastCenter.shared.show("已撤销一次")
     }
 
     private func markName(_ mark: CycleStats.DayMark) -> String {

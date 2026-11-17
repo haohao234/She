@@ -82,6 +82,33 @@ struct CyclePeriodStore {
     }
 }
 
+// MARK: - 性生活记录写入口
+
+/// 只提供「记一次 / 撤销最近一次」两种写操作。
+/// 调用方传当前已经查询到的那一串，避免每次点 ＋/− 都再做一次全表 fetch。
+struct IntimacyStore {
+
+    let context: ModelContext
+
+    @discardableResult
+    func add(on date: Date) -> IntimacyRecord {
+        let fresh = IntimacyRecord(happenedOn: date)
+        context.insert(fresh)
+        try? context.save()
+        return fresh
+    }
+
+    /// 撤销这一天最晚补记的一行。没有记录时什么都不做。
+    func removeLatest(on date: Date, from records: [IntimacyRecord]) {
+        let cal = Calendar.current
+        guard let last = records
+            .filter({ cal.isDate($0.happenedOn, inSameDayAs: date) })
+            .max(by: { $0.createdAt < $1.createdAt }) else { return }
+        context.delete(last)
+        try? context.save()
+    }
+}
+
 // MARK: - 通知
 
 /// 生理期提醒的唯一出口。
