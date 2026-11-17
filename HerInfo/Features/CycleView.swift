@@ -459,14 +459,10 @@ struct CycleCalendarCard: View {
                 .frame(width: 28, height: 28)
                 .background(C.fill, in: Circle())
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text("性生活")
-                    .font(Typo.bodyS)
-                    .foregroundStyle(C.ink)
-                Text("本月 \(monthIntimacyCount) 次 · 这一天 \(selectedIntimacyCount) 次")
-                    .font(Typo.caption)
-                    .foregroundStyle(C.ink3)
-            }
+            // 只读作「爱心有几个」，界面不出现功能全称。
+            Text("本月 \(monthIntimacyCount) 次 · 这天 \(selectedIntimacyCount) 次")
+                .font(Typo.captionM)
+                .foregroundStyle(C.ink2)
 
             Spacer(minLength: 0)
 
@@ -480,7 +476,7 @@ struct CycleCalendarCard: View {
             .buttonStyle(.plain)
             .disabled(selectedIntimacyCount == 0)
             .opacity(selectedIntimacyCount == 0 ? 0.35 : 1)
-            .accessibilityLabel("撤销这一天的一次记录")
+            .accessibilityLabel("撤销一个爱心标记")
 
             Button { addIntimacy() } label: {
                 Image(systemName: "plus")
@@ -492,24 +488,24 @@ struct CycleCalendarCard: View {
             .buttonStyle(.plain)
             .disabled(isFutureSelected)
             .opacity(isFutureSelected ? 0.35 : 1)
-            .accessibilityLabel("在这一天记一次性生活")
-            .accessibilityHint(isFutureSelected ? "未来日期不能记录" : "在选中的日期增加一次")
+            .accessibilityLabel("增加一个爱心标记")
+            .accessibilityHint(isFutureSelected ? "未来日期不能标记" : "在选中的日期增加一个标记")
         }
     }
 
     private func addIntimacy() {
         guard !isFutureSelected else {
-            ToastCenter.shared.show("未来的日子还不能记")
+            ToastCenter.shared.show("未来的日子还不能标记")
             return
         }
         IntimacyStore(context: ctx).add(on: selectedDate)
-        ToastCenter.shared.show("已记一次 · \(DateFormatter.cycleFull.string(from: selectedDate))")
+        ToastCenter.shared.show("已标记 · \(DateFormatter.cycleFull.string(from: selectedDate))")
     }
 
     private func removeIntimacy() {
         guard selectedIntimacyCount > 0 else { return }
         IntimacyStore(context: ctx).removeLatest(on: selectedDate, from: intimacyRecords)
-        ToastCenter.shared.show("已撤销一次")
+        ToastCenter.shared.show("已撤销一个标记")
     }
 
     private func markName(_ mark: CycleStats.DayMark) -> String {
