@@ -189,6 +189,14 @@ extension DateFormatter {
         return f
     }()
 
+    /// `2026年11月` —— 经期月历的标题。
+    static let cycleYearMonth: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy年M月"
+        return f
+    }()
+
     /// `9月` —— 日期块下半、柱状图底下的月份。
     static let cycleMonth: DateFormatter = {
         let f = DateFormatter()

@@ -708,6 +708,103 @@ struct CycleStats {
     /// 39 屏那 6 根柱子。
     var recentSix: [Entry] { Array(periods.prefix(6)) }
 
+    // MARK: 月历上的某一天
+
+    /// 月历格子的标记。**预测与实测是两种东西，不能共用一个 case。**
+    enum DayMark {
+        case none
+        case period           // 用户记下的经期
+        case predictedPeriod  // 按规律推出来的经期
+        case fertile          // 易孕期（排卵日另算）
+        case ovulation        // 估算排卵日
+    }
+
+    /// 这一天落在哪一次**已记录**经期里。
+    func period(on date: Date) -> Entry? {
+        periods.first { p in
+            let d = days(from: p.startedAt, to: date)
+            return d >= 0 && d < max(1, p.durationDays)
+        }
+    }
+
+    /// 月历与周期环共用的唯一判据。
+    ///
+    /// 优先级是「实测 > 预测经期 > 排卵日 > 易孕期」。短周期里几种推算
+    /// 可能撞在同一天，格子只画最确定的那一种，不在 30pt 里堆四个色块。
+    func dayMark(on date: Date) -> DayMark {
+        if period(on: date) != nil { return .period }
+        if isPredictedPeriod(on: date) { return .predictedPeriod }
+        return fertilityMark(on: date)
+    }
+
+    /// 是否落在推算经期里。`nextStart` 之后继续按平均周期向后推，
+    /// 所以往后翻月也能看到，而不是只有最近一个月有标记。
+    private func isPredictedPeriod(on date: Date) -> Bool {
+        guard var start = nextStart, let duration = latest?.durationDays else { return false }
+        let cal = Calendar.current
+        var steps = 0
+        while steps < 240 {
+            let d = days(from: start, to: date)
+            if d < 0 { return false }
+            if d < max(1, duration) { return true }
+            guard let next = cal.date(byAdding: .day, value: averageCycle, to: start) else { return false }
+            start = next
+            steps += 1
+        }
+        return false
+    }
+
+    /// 历史周期按「下一次真实开始日」回推；最新及未来周期按预测开始日回推。
+    /// 这样改了一次历史记录之后，那一段排卵日也会跟着改，不会留下旧快照。
+    private func fertilityMark(on date: Date) -> DayMark {
+        for idx in periods.indices {
+            let p = periods[idx]
+            let boundary: Date
+            if idx > 0 {
+                let recordedNext = periods[idx - 1].startedAt
+                let gap = days(from: p.startedAt, to: recordedNext)
+                // 与平均周期同一条 15...60 过滤：误记不拿来推排卵日。
+                boundary = (15...60).contains(gap)
+                    ? recordedNext
+                    : adding(averageCycle, to: p.startedAt)
+            } else {
+                boundary = nextStart ?? adding(averageCycle, to: p.startedAt)
+            }
+            let mark = fertilityMark(on: date, nextPeriodStart: boundary)
+            if mark != .none { return mark }
+        }
+
+        // 下一次预测之后的周期。
+        guard var start = nextStart else { return .none }
+        var steps = 0
+        while steps < 240 {
+            let boundary = adding(averageCycle, to: start)
+            let mark = fertilityMark(on: date, nextPeriodStart: boundary)
+            if mark != .none { return mark }
+            // 再往后只会更晚，不必空跑；240 是异常日期的兜底上限。
+            if days(from: date, to: start) > averageCycle { break }
+            start = boundary
+            steps += 1
+        }
+        return .none
+    }
+
+    /// 排卵日 ≈ 下次开始前 14 天；易孕期 = 其前 5 天至排卵日。
+    /// 排卵日本身单独画，所以这里的 `.fertile` 只返回前面那 5 天。
+    /// **这是日历推算，不是医学检测。**
+    private func fertilityMark(on date: Date, nextPeriodStart: Date) -> DayMark {
+        let cal = Calendar.current
+        guard let ovulation = cal.date(byAdding: .day, value: -14, to: nextPeriodStart) else { return .none }
+        if cal.isDate(date, inSameDayAs: ovulation) { return .ovulation }
+        guard let first = cal.date(byAdding: .day, value: -5, to: ovulation) else { return .none }
+        let d = days(from: first, to: date)
+        return d >= 0 && d < 5 ? .fertile : .none
+    }
+
+    private func adding(_ days: Int, to date: Date) -> Date {
+        Calendar.current.date(byAdding: .day, value: days, to: date) ?? date
+    }
+
     /// 「很规律」的判据。**给说法不给分数** —— 界面上只有「很规律 / 有点波动」
     /// 两种说法，没有百分制。做一个精确到小数点的「规律指数」，
     /// 等于让用户在身体本来就会波动的事上追求一个不该追求的数字。

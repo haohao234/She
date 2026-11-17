@@ -52,6 +52,7 @@ struct CycleView: View {
                 } else {
                     ringCard
                     statRow
+                    CycleCalendarCard(stats: stats)
                     recentCard
                 }
             }
@@ -210,6 +211,229 @@ struct CycleView: View {
     }
 }
 
+// MARK: - 经期月历
+
+/// 把「每一次经期」摊到具体日期上，而不只在列表里写「某日开始」。
+///
+/// 四种标记共用 `CycleStats.dayMark`：实测经期、预测经期、易孕期、排卵日。
+/// 选一天后下面那句会把它念出来 —— 颜色不是唯一的信息出口。
+struct CycleCalendarCard: View {
+
+    let stats: CycleStats
+
+    @State private var displayedMonth = Date.now
+    @State private var selectedDate = Date.now
+
+    private let weekdayTitles = ["一", "二", "三", "四", "五", "六", "日"]
+
+    /// 中文习惯从周一开始。只改这一份日历，不改系统 `Calendar.current`。
+    private var cal: Calendar {
+        var c = Calendar.current
+        c.firstWeekday = 2
+        return c
+    }
+
+    private var monthStart: Date {
+        cal.date(from: cal.dateComponents([.year, .month], from: displayedMonth)) ?? displayedMonth
+    }
+
+    /// 固定 6 行 × 7 列。前后月的日期淡显，跨月经期不会在月末被切断。
+    private var days: [Date] {
+        let firstWeekday = cal.component(.weekday, from: monthStart)
+        let leading = (firstWeekday - cal.firstWeekday + 7) % 7
+        guard let gridStart = cal.date(byAdding: .day, value: -leading, to: monthStart) else { return [] }
+        return (0..<42).compactMap { cal.date(byAdding: .day, value: $0, to: gridStart) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+
+            HStack(spacing: 0) {
+                ForEach(weekdayTitles, id: \.self) { title in
+                    Text(title)
+                        .font(Typo.caption)
+                        .foregroundStyle(C.ink3)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 4) {
+                ForEach(days, id: \.self) { date in
+                    dayCell(date)
+                }
+            }
+
+            HStack(spacing: 10) {
+                legendItem("经期", color: CYC.period)
+                legendItem("预计经期", color: CYC.periodSoft, dashed: true)
+                legendItem("易孕期", color: C.moss)
+                legendItem("排卵日", color: CYC.fertile)
+            }
+
+            Rectangle().fill(C.line).frame(height: 1)
+
+            Text(selectedDetail)
+                .font(Typo.captionM)
+                .foregroundStyle(C.ink2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("排卵日与易孕期按 \(stats.averageCycle) 天周期估算，不是医学判断。")
+                .font(Typo.caption)
+                .foregroundStyle(C.ink3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .background(C.card, in: RoundedRectangle(cornerRadius: R.card, style: .continuous))
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Text(DateFormatter.cycleYearMonth.string(from: displayedMonth))
+                .font(Typo.cardTitle)
+                .foregroundStyle(C.ink)
+            Spacer(minLength: 0)
+            monthButton("chevron.left", delta: -1, label: "上一个月")
+            Button("今天") { goToday() }
+                .font(Typo.captionM)
+                .foregroundStyle(C.primary)
+                .frame(height: 30)
+                .padding(.horizontal, 4)
+            monthButton("chevron.right", delta: 1, label: "下一个月")
+        }
+    }
+
+    private func monthButton(_ symbol: String, delta: Int, label: String) -> some View {
+        Button { shiftMonth(delta) } label: {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(C.ink2)
+                .frame(width: 30, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private func dayCell(_ date: Date) -> some View {
+        let mark = stats.dayMark(on: date)
+        let inMonth = cal.isDate(date, equalTo: displayedMonth, toGranularity: .month)
+        let isToday = cal.isDateInToday(date)
+        let selected = cal.isDate(date, inSameDayAs: selectedDate)
+
+        return Button {
+            selectedDate = date
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(background(for: mark))
+                    .frame(width: 30, height: 30)
+                if mark == .predictedPeriod {
+                    Circle()
+                        .stroke(CYC.period, style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
+                        .frame(width: 30, height: 30)
+                }
+                if isToday {
+                    Circle()
+                        .stroke(C.ink3, lineWidth: 1)
+                        .frame(width: 34, height: 34)
+                }
+                if selected {
+                    Circle()
+                        .stroke(C.ink, lineWidth: 1.2)
+                        .frame(width: 38, height: 38)
+                }
+                Text(DateFormatter.cycleDay.string(from: date))
+                    .font(.system(size: 13, weight: mark == .none ? .regular : .semibold).monospacedDigit())
+                    .foregroundStyle(foreground(for: mark))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 40)
+            .opacity(inMonth ? 1 : 0.3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(DateFormatter.cycleFull.string(from: date))，\(markName(mark))")
+    }
+
+    private func background(for mark: CycleStats.DayMark) -> Color {
+        switch mark {
+        case .none: return .clear
+        case .period: return CYC.period
+        case .predictedPeriod: return CYC.periodSoft
+        case .fertile: return C.moss
+        case .ovulation: return CYC.fertile
+        }
+    }
+
+    private func foreground(for mark: CycleStats.DayMark) -> Color {
+        switch mark {
+        case .none: return C.ink
+        case .period, .ovulation: return .white
+        case .predictedPeriod: return CYC.period
+        case .fertile: return CYC.fertile
+        }
+    }
+
+    private func legendItem(_ title: String, color: Color, dashed: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            ZStack {
+                Circle().fill(color).frame(width: 8, height: 8)
+                if dashed {
+                    Circle()
+                        .stroke(CYC.period, style: StrokeStyle(lineWidth: 0.8, dash: [1.5, 1.5]))
+                        .frame(width: 8, height: 8)
+                }
+            }
+            Text(title)
+                .font(Typo.caption)
+                .foregroundStyle(C.ink3)
+        }
+    }
+
+    private var selectedDetail: String {
+        let day = DateFormatter.cycleFull.string(from: selectedDate)
+        switch stats.dayMark(on: selectedDate) {
+        case .period:
+            if let p = stats.period(on: selectedDate) {
+                let dayIndex = stats.days(from: p.startedAt, to: selectedDate) + 1
+                return "\(day) · 经期第 \(dayIndex) 天，共 \(p.durationDays) 天"
+            }
+            return "\(day) · 经期"
+        case .predictedPeriod:
+            return "\(day) · 预计经期（按 \(stats.averageCycle) 天周期估算）"
+        case .fertile:
+            return "\(day) · 估算易孕期"
+        case .ovulation:
+            return "\(day) · 估算排卵日"
+        case .none:
+            return "\(day) · 没有经期或排卵标记"
+        }
+    }
+
+    private func markName(_ mark: CycleStats.DayMark) -> String {
+        switch mark {
+        case .none: return "没有标记"
+        case .period: return "经期"
+        case .predictedPeriod: return "预计经期"
+        case .fertile: return "易孕期"
+        case .ovulation: return "排卵日"
+        }
+    }
+
+    private func shiftMonth(_ delta: Int) {
+        guard let next = cal.date(byAdding: .month, value: delta, to: monthStart) else { return }
+        displayedMonth = next
+        // 回到当前月时仍选今天；否则选新月的第一天，说明文字不留在上个月。
+        selectedDate = cal.isDate(next, equalTo: .now, toGranularity: .month) ? .now : next
+    }
+
+    private func goToday() {
+        displayedMonth = .now
+        selectedDate = .now
+    }
+}
+
 // MARK: - 周期环（37 屏的核心图形）
 
 /// 一圈点阵 + 环心那个数字。
@@ -280,16 +504,16 @@ struct CycleRing: View {
 
     /// 第 i 天属于哪一段。
     private func color(at i: Int) -> Color {
-        guard let p = stats.latest else { return CYC.track }
-        if i < p.durationDays { return CYC.period }
+        guard let p = stats.latest,
+              let date = Calendar.current.date(byAdding: .day, value: i, to: p.startedAt) else { return CYC.track }
 
-        // 易孕窗：按常识推算为「下次经期前 14 天前后各 3 天」。
-        // **这是推算不是判断** —— 40 屏页脚那句说的就是这件事。
-        let remaining = stats.averageCycle - p.durationDays
-        let ovu = max(0, remaining - 14)
-        if i >= p.durationDays + ovu && i < p.durationDays + ovu + 6 { return CYC.fertile }
-
-        return CYC.track
+        // **与月历读同一个判据。** 以前这里另算了一遍易孕窗，月份一多
+        // 就可能出现「环上说是这天、日历上说是那天」的两份真相。
+        switch stats.dayMark(on: date) {
+        case .period: return CYC.period
+        case .fertile, .ovulation: return CYC.fertile
+        case .none, .predictedPeriod: return CYC.track
+        }
     }
 
     /// 正在经期中的那几天放大一点 —— 这是环上唯一的「当前」标记。
